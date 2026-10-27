@@ -1,0 +1,890 @@
+﻿import { apiRequest } from "@/lib/api";
+"use client";
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
+import {
+  Check,
+  ChevronDown,
+  Globe2,
+  LockKeyhole,
+  Mail,
+  Palette,
+  RefreshCw,
+  Save,
+  Settings as SettingsIcon,
+  ShieldCheck,
+  Server,
+} from "lucide-react";
+type Configuration = {
+  id: string;
+  key: string;
+  category: string;
+  value: string;
+  description?: string | null;
+  isEditable: boolean;
+  updatedAt?: string;
+};
+
+type ConfigurationResponse = {
+  value?: Configuration[];
+  data?: Configuration[];
+};
+
+type SettingDefinition = {
+  key: string;
+  label: string;
+  description: string;
+  type: "text" | "number" | "select" | "boolean";
+  options?: Array<{
+    label: string;
+    value: string;
+  }>;
+  suffix?: string;
+};
+
+type SectionDefinition = {
+  id: string;
+  title: string;
+  description: string;
+  icon: typeof Globe2;
+  keys: SettingDefinition[];
+};
+
+const sections: SectionDefinition[] = [
+  {
+    id: "general",
+    title: "General",
+    description:
+      "Preferencias generales utilizadas por la aplicaciÃ³n.",
+    icon: Globe2,
+    keys: [
+      {
+        key: "general.language",
+        label: "Idioma",
+        description:
+          "Idioma principal utilizado por la interfaz.",
+        type: "select",
+        options: [
+          {
+            label: "EspaÃ±ol",
+            value: "es",
+          },
+          {
+            label: "English",
+            value: "en",
+          },
+        ],
+      },
+      {
+        key: "general.timezone",
+        label: "Zona horaria",
+        description:
+          "Zona horaria utilizada para fechas y operaciones del sistema.",
+        type: "select",
+        options: [
+          {
+            label: "Santo Domingo",
+            value: "America/Santo_Domingo",
+          },
+          {
+            label: "New York",
+            value: "America/New_York",
+          },
+          {
+            label: "UTC",
+            value: "UTC",
+          },
+        ],
+      },
+      {
+        key: "general.dateFormat",
+        label: "Formato de fecha",
+        description:
+          "Formato utilizado para mostrar fechas en la aplicaciÃ³n.",
+        type: "select",
+        options: [
+          {
+            label: "DD/MM/YYYY",
+            value: "DD/MM/YYYY",
+          },
+          {
+            label: "MM/DD/YYYY",
+            value: "MM/DD/YYYY",
+          },
+          {
+            label: "YYYY-MM-DD",
+            value: "YYYY-MM-DD",
+          },
+        ],
+      },
+    ],
+  },
+
+  {
+    id: "security",
+    title: "Seguridad",
+    description:
+      "ParÃ¡metros relacionados con sesiones y recuperaciÃ³n de acceso.",
+    icon: LockKeyhole,
+    keys: [
+      {
+        key: "security.verificationCodeExpirationMinutes",
+        label: "ExpiraciÃ³n del cÃ³digo de verificaciÃ³n",
+        description:
+          "Tiempo mÃ¡ximo que permanece vÃ¡lido un cÃ³digo de verificaciÃ³n.",
+        type: "number",
+        suffix: "minutos",
+      },
+      {
+        key: "security.passwordResetExpirationMinutes",
+        label: "ExpiraciÃ³n de recuperaciÃ³n de contraseÃ±a",
+        description:
+          "Tiempo mÃ¡ximo que permanece vÃ¡lido un enlace de recuperaciÃ³n.",
+        type: "number",
+        suffix: "minutos",
+      },
+      {
+        key: "security.sessionExpirationHours",
+        label: "DuraciÃ³n de la sesiÃ³n",
+        description:
+          "Tiempo mÃ¡ximo permitido para mantener una sesiÃ³n iniciada.",
+        type: "number",
+        suffix: "horas",
+      },
+    ],
+  },
+
+  {
+    id: "email",
+    title: "Correo",
+    description:
+      "Direcciones utilizadas por el sistema para comunicaciones.",
+    icon: Mail,
+    keys: [
+      {
+        key: "email.fromAddress",
+        label: "Correo remitente",
+        description:
+          "DirecciÃ³n utilizada como remitente de los correos del sistema.",
+        type: "text",
+      },
+      {
+        key: "email.backupAddress",
+        label: "Correo de respaldo",
+        description:
+          "DirecciÃ³n utilizada como respaldo para comunicaciones del sistema.",
+        type: "text",
+      },
+    ],
+  },
+
+  {
+    id: "appearance",
+    title: "Apariencia",
+    description:
+      "Preferencias visuales de esta instalaciÃ³n del sistema.",
+    icon: Palette,
+    keys: [],
+  },
+
+  {
+    id: "system",
+    title: "Sistema",
+    description:
+      "InformaciÃ³n general de la aplicaciÃ³n.",
+    icon: Server,
+    keys: [
+      {
+        key: "system.name",
+        label: "Nombre del sistema",
+        description:
+          "Nombre principal mostrado por la aplicaciÃ³n.",
+        type: "text",
+      },
+      {
+        key: "system.description",
+        label: "DescripciÃ³n",
+        description:
+          "DescripciÃ³n general de la plataforma.",
+        type: "text",
+      },
+      {
+        key: "system.version",
+        label: "VersiÃ³n",
+        description:
+          "VersiÃ³n actual registrada del sistema.",
+        type: "text",
+      },
+    ],
+  },
+];
+
+function getConfigurationValue(
+  configurations: Configuration[],
+  key: string,
+) {
+  return configurations.find(
+    (configuration) => configuration.key === key,
+  );
+}
+
+export default function Settings() {
+  const [configurations, setConfigurations] = useState<
+    Configuration[]
+  >([]);
+
+  const [draft, setDraft] = useState<Record<string, string>>({});
+
+  const [activeSection, setActiveSection] =
+    useState("general");
+
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const [accent, setAccent] = useState("violet");
+
+  const loadConfigurations = useCallback(
+    async (manual = false) => {
+      try {
+        if (manual) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
+
+        setError("");
+        setMessage("");
+
+        const response = await apiRequest(
+          `/configuration`,
+          {
+            method: "GET",
+            cache: "no-store",
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            `El servidor respondiÃ³ con HTTP ${response.status}.`,
+          );
+        }
+
+        const result: ConfigurationResponse =
+          await response.json();
+
+        const data =
+          result.value ??
+          result.data ??
+          [];
+
+        setConfigurations(data);
+
+        const values: Record<string, string> = {};
+
+        for (const configuration of data) {
+          values[configuration.key] =
+            configuration.value ?? "";
+        }
+
+        setDraft(values);
+      } catch (requestError) {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "No fue posible cargar la configuraciÃ³n.",
+        );
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    loadConfigurations();
+  }, [loadConfigurations]);
+
+  useEffect(() => {
+    const savedAccent =
+      window.localStorage.getItem(
+        "inventory-system-accent",
+      );
+
+    if (savedAccent) {
+      setAccent(savedAccent);
+    }
+  }, []);
+
+  const currentSection = useMemo(
+    () =>
+      sections.find(
+        (section) => section.id === activeSection,
+      ) ?? sections[0],
+    [activeSection],
+  );
+
+  const updateDraft = (
+    key: string,
+    value: string,
+  ) => {
+    setDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+
+    setMessage("");
+    setError("");
+  };
+
+  const saveSection = async () => {
+    const editableSettings =
+      currentSection.keys.filter((setting) => {
+        const configuration =
+          getConfigurationValue(
+            configurations,
+            setting.key,
+          );
+
+        return configuration?.isEditable;
+      });
+
+    if (editableSettings.length === 0) {
+      setMessage(
+        "No hay configuraciones editables en esta secciÃ³n.",
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+      setMessage("");
+
+      for (const setting of editableSettings) {
+        const value =
+          draft[setting.key] ?? "";
+
+        if (setting.type === "number") {
+          const numericValue = Number(value);
+
+          if (
+            !Number.isFinite(numericValue) ||
+            numericValue < 1
+          ) {
+            throw new Error(
+              `${setting.label}: introduce un valor numÃ©rico vÃ¡lido.`,
+            );
+          }
+
+          if (
+            setting.key ===
+              "security.verificationCodeExpirationMinutes" &&
+            numericValue > 10
+          ) {
+            throw new Error(
+              "El cÃ³digo de verificaciÃ³n no puede superar 10 minutos.",
+            );
+          }
+
+          if (
+            setting.key ===
+              "security.passwordResetExpirationMinutes" &&
+            numericValue > 30
+          ) {
+            throw new Error(
+              "La recuperaciÃ³n de contraseÃ±a no puede superar 30 minutos.",
+            );
+          }
+        }
+
+        const response = await apiRequest(
+          `/configuration/${encodeURIComponent(
+            setting.key,
+          )}`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              value,
+            }),
+          },
+        );
+
+        if (!response.ok) {
+          let serverMessage =
+            `No se pudo guardar "${setting.label}".`;
+
+          try {
+            const result =
+              await response.json();
+
+            if (result?.message) {
+              serverMessage =
+                result.message;
+            }
+          } catch {
+            // Mantener mensaje original.
+          }
+
+          throw new Error(serverMessage);
+        }
+      }
+
+      await loadConfigurations(true);
+
+      setMessage(
+        "ConfiguraciÃ³n guardada correctamente.",
+      );
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "No fue posible guardar los cambios.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const changeAccent = (value: string) => {
+    setAccent(value);
+
+    window.localStorage.setItem(
+      "inventory-system-accent",
+      value,
+    );
+  };
+
+  const renderControl = (
+    setting: SettingDefinition,
+  ) => {
+    const value =
+      draft[setting.key] ?? "";
+
+    if (setting.type === "select") {
+      return (
+        <div className="relative">
+          <select
+            value={value}
+            onChange={(event) =>
+              updateDraft(
+                setting.key,
+                event.target.value,
+              )
+            }
+            className="h-11 w-full appearance-none rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 pr-10 text-sm text-white outline-none transition focus:border-violet-400/40"
+          >
+            {setting.options?.map(
+              (option) => (
+                <option
+                  key={option.value}
+                  value={option.value}
+                  className="bg-[#0b1424]"
+                >
+                  {option.label}
+                </option>
+              ),
+            )}
+          </select>
+
+          <ChevronDown
+            size={16}
+            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"
+          />
+        </div>
+      );
+    }
+
+    if (setting.type === "number") {
+      return (
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            max={
+              setting.key ===
+              "security.verificationCodeExpirationMinutes"
+                ? 10
+                : setting.key ===
+                    "security.passwordResetExpirationMinutes"
+                  ? 30
+                  : undefined
+            }
+            value={value}
+            onChange={(event) =>
+              updateDraft(
+                setting.key,
+                event.target.value,
+              )
+            }
+            className="h-11 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 text-sm text-white outline-none transition focus:border-violet-400/40"
+          />
+
+          {setting.suffix && (
+            <span className="shrink-0 text-xs text-slate-500">
+              {setting.suffix}
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <input
+        type="text"
+        value={value}
+        onChange={(event) =>
+          updateDraft(
+            setting.key,
+            event.target.value,
+          )
+        }
+        className="h-11 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-violet-400/40"
+      />
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+
+      {/* HEADER */}
+
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+
+        <div>
+
+          <div className="flex items-center gap-3">
+
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-300 ring-1 ring-violet-400/10">
+              <SettingsIcon size={21} />
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-300">
+                Sistema
+              </p>
+
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">
+                ConfiguraciÃ³n
+              </h1>
+            </div>
+
+          </div>
+
+          <p className="mt-3 max-w-2xl text-sm text-slate-400">
+            Administra las preferencias generales del
+            Sistema Inventario.
+          </p>
+
+        </div>
+
+        <div className="flex items-center gap-2">
+
+          <button
+            type="button"
+            onClick={() =>
+              loadConfigurations(true)
+            }
+            disabled={refreshing || saving}
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 text-sm font-medium text-slate-300 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-50"
+          >
+            <RefreshCw
+              size={16}
+              className={
+                refreshing
+                  ? "animate-spin"
+                  : ""
+              }
+            />
+
+            Actualizar
+          </button>
+
+          {currentSection.id !==
+            "appearance" && (
+            <button
+              type="button"
+              onClick={saveSection}
+              disabled={saving || loading}
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-violet-500 px-4 text-sm font-semibold text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? (
+                <RefreshCw
+                  size={16}
+                  className="animate-spin"
+                />
+              ) : (
+                <Save size={16} />
+              )}
+
+              {saving
+                ? "Guardando..."
+                : "Guardar cambios"}
+            </button>
+          )}
+
+        </div>
+
+      </div>
+
+
+      {/* FEEDBACK */}
+
+      {message && (
+        <div className="flex items-center gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-sm text-emerald-300">
+          <Check size={17} />
+          {message}
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-2xl border border-red-400/20 bg-red-400/5 px-4 py-3 text-sm text-red-300">
+          {error}
+        </div>
+      )}
+
+
+      {/* NAVIGATION + CONTENT */}
+
+      <div className="grid gap-6 lg:grid-cols-[230px_minmax(0,1fr)]">
+
+        {/* SIDEBAR */}
+
+        <aside className="h-fit rounded-2xl border border-white/[0.07] bg-[#0b1424] p-2">
+
+          {sections.map((section) => {
+            const Icon = section.icon;
+            const active =
+              section.id === activeSection;
+
+            return (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() =>
+                  setActiveSection(section.id)
+                }
+                className={`mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm transition ${
+                  active
+                    ? "bg-violet-500/10 text-violet-300 ring-1 ring-violet-400/10"
+                    : "text-slate-400 hover:bg-white/[0.04] hover:text-white"
+                }`}
+              >
+                <Icon size={17} />
+
+                <span className="font-medium">
+                  {section.title}
+                </span>
+              </button>
+            );
+          })}
+
+        </aside>
+
+
+        {/* MAIN */}
+
+        <main className="rounded-2xl border border-white/[0.07] bg-[#0b1424] shadow-2xl shadow-black/10">
+
+          <div className="border-b border-white/[0.07] px-6 py-5">
+
+            <div className="flex items-center gap-3">
+
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
+                <currentSection.icon
+                  size={18}
+                />
+              </div>
+
+              <div>
+                <h2 className="text-lg font-semibold text-white">
+                  {currentSection.title}
+                </h2>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  {currentSection.description}
+                </p>
+              </div>
+
+            </div>
+
+          </div>
+
+
+          {loading ? (
+
+            <div className="p-12 text-center text-sm text-slate-500">
+              Cargando configuraciÃ³n...
+            </div>
+
+          ) : currentSection.id ===
+            "appearance" ? (
+
+            <div className="space-y-6 p-6">
+
+              <div>
+                <h3 className="text-sm font-semibold text-white">
+                  Tema
+                </h3>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  La interfaz actual utiliza el tema oscuro.
+                </p>
+
+                <div className="mt-4 inline-flex rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm text-slate-300">
+                  ðŸŒ™ Oscuro
+                </div>
+              </div>
+
+
+              <div className="border-t border-white/[0.06] pt-6">
+
+                <h3 className="text-sm font-semibold text-white">
+                  Color de acento
+                </h3>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Preferencia visual guardada en este navegador.
+                </p>
+
+                <div className="mt-4 flex flex-wrap gap-3">
+
+                  {[
+                    {
+                      id: "violet",
+                      label: "Violeta",
+                    },
+                    {
+                      id: "blue",
+                      label: "Azul",
+                    },
+                    {
+                      id: "emerald",
+                      label: "Esmeralda",
+                    },
+                  ].map((option) => (
+
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() =>
+                        changeAccent(
+                          option.id,
+                        )
+                      }
+                      className={`rounded-xl border px-4 py-2.5 text-xs font-semibold transition ${
+                        accent ===
+                        option.id
+                          ? "border-violet-400/30 bg-violet-500/10 text-violet-300"
+                          : "border-white/[0.08] bg-white/[0.03] text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+
+                  ))}
+
+                </div>
+
+              </div>
+
+            </div>
+
+          ) : currentSection.keys.length ===
+            0 ? (
+
+            <div className="p-12 text-center text-sm text-slate-500">
+              No hay configuraciones disponibles.
+            </div>
+
+          ) : (
+
+            <div className="divide-y divide-white/[0.06]">
+
+              {currentSection.keys.map(
+                (setting) => {
+
+                  const configuration =
+                    getConfigurationValue(
+                      configurations,
+                      setting.key,
+                    );
+
+                  if (!configuration) {
+                    return null;
+                  }
+
+                  return (
+                    <div
+                      key={setting.key}
+                      className="flex flex-col gap-4 px-6 py-6 xl:flex-row xl:items-center xl:justify-between"
+                    >
+
+                      <div className="min-w-0 xl:max-w-[55%]">
+
+                        <div className="flex items-center gap-2">
+
+                          <h3 className="text-sm font-semibold text-white">
+                            {setting.label}
+                          </h3>
+
+                          {!configuration.isEditable && (
+                            <ShieldCheck
+                              size={14}
+                              className="text-slate-600"
+                            />
+                          )}
+
+                        </div>
+
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          {setting.description}
+                        </p>
+
+                      </div>
+
+
+                      <div className="w-full xl:w-[360px]">
+
+                        {configuration.isEditable ? (
+                          renderControl(
+                            setting,
+                          )
+                        ) : (
+                          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-sm text-slate-500">
+                            {configuration.value ||
+                              "Sin valor"}
+                          </div>
+                        )}
+
+                      </div>
+
+                    </div>
+                  );
+                },
+              )}
+
+            </div>
+
+          )}
+
+        </main>
+
+      </div>
+
+    </div>
+  );
+}

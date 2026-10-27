@@ -1,0 +1,1026 @@
+﻿import { apiRequest } from "@/lib/api";
+"use client";
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
+import {
+  Activity,
+  AlertTriangle,
+  BarChart3,
+  Boxes,
+  CheckCircle2,
+  Clock3,
+  Database,
+  Package,
+  RefreshCw,
+  ShieldAlert,
+  TrendingUp,
+  Users,
+  Wrench,
+} from "lucide-react";
+type EquipmentReport = {
+  total: number;
+  active: number;
+  inactive: number;
+  available: number;
+  assigned: number;
+  damaged: number;
+  byCategory: Array<{
+    category: string | null;
+    _count: {
+      id: number;
+    };
+  }>;
+  byDepartment: Array<{
+    departmentId: string | null;
+    _count: {
+      id: number;
+    };
+  }>;
+};
+
+type ComponentReport = {
+  totalTypes: number;
+  totalUnits: number;
+  lowStockCount: number;
+  lowStock: Array<{
+    id: string;
+    type: string;
+    quantity: number;
+    minimumStock: number;
+    [key: string]: unknown;
+  }>;
+  components: Array<{
+    id: string;
+    type: string;
+    quantity: number;
+    minimumStock: number;
+    [key: string]: unknown;
+  }>;
+};
+
+type DamageReport = {
+  total: number;
+  open: number;
+  inProgress: number;
+  repaired: number;
+  cancelled: number;
+  highPriority: number;
+};
+
+type MovementReport = {
+  total: number;
+  recent: Array<Record<string, unknown>>;
+};
+
+type PositionReport = {
+  total: number;
+  empty: number;
+  occupied: number;
+};
+
+type ReportsData = {
+  generatedAt: string;
+  equipment: EquipmentReport;
+  components: ComponentReport;
+  damages: DamageReport;
+  movements: MovementReport;
+  positions: PositionReport;
+};
+
+type ReportsResponse = {
+  generatedAt?: string;
+  data?: ReportsData;
+  message?: string;
+};
+
+export default function Reports() {
+  const [data, setData] = useState<ReportsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadReports = useCallback(async (manual = false) => {
+    try {
+      if (manual) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      setError("");
+
+      const response = await apiRequest(`/reports`, {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `El servidor respondiÃ³ con HTTP ${response.status}.`,
+        );
+      }
+
+      const result: ReportsResponse = await response.json();
+
+      const reportData = result.data ?? result;
+
+      if (
+        !reportData ||
+        !("equipment" in reportData) ||
+        !("components" in reportData)
+      ) {
+        throw new Error(
+          "El backend respondiÃ³, pero el formato del reporte no es vÃ¡lido.",
+        );
+      }
+
+      setData(reportData as ReportsData);
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error
+          ? requestError.message
+          : "No fue posible cargar los reportes.";
+
+      setError(message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadReports();
+  }, [loadReports]);
+
+  const equipmentUtilization = useMemo(() => {
+    if (!data?.equipment.total) {
+      return 0;
+    }
+
+    return Math.round(
+      (data.equipment.assigned / data.equipment.total) * 100,
+    );
+  }, [data]);
+
+  const positionOccupation = useMemo(() => {
+    if (!data?.positions.total) {
+      return 0;
+    }
+
+    return Math.round(
+      (data.positions.occupied / data.positions.total) * 100,
+    );
+  }, [data]);
+
+  const equipmentStatus = useMemo(() => {
+    if (!data) {
+      return [];
+    }
+
+    return [
+      {
+        label: "Activos",
+        value: data.equipment.active,
+        icon: CheckCircle2,
+        className: "text-emerald-400",
+        bar: "bg-emerald-400",
+      },
+      {
+        label: "Disponibles",
+        value: data.equipment.available,
+        icon: Package,
+        className: "text-cyan-400",
+        bar: "bg-cyan-400",
+      },
+      {
+        label: "Asignados",
+        value: data.equipment.assigned,
+        icon: Users,
+        className: "text-violet-400",
+        bar: "bg-violet-400",
+      },
+      {
+        label: "DaÃ±ados",
+        value: data.equipment.damaged,
+        icon: AlertTriangle,
+        className: "text-red-400",
+        bar: "bg-red-400",
+      },
+    ];
+  }, [data]);
+
+  if (loading) {
+    return (
+      <div className="min-h-full bg-[#070d19] p-6 text-white">
+        <div className="mx-auto max-w-[1500px]">
+          <PageHeader
+            loading
+            onRefresh={() => loadReports(true)}
+            refreshing={refreshing}
+          />
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <SkeletonCard key={index} />
+            ))}
+          </div>
+
+          <div className="mt-5 grid gap-5 xl:grid-cols-3">
+            <SkeletonPanel className="xl:col-span-2" />
+            <SkeletonPanel />
+          </div>
+
+          <div className="mt-5 grid gap-5 md:grid-cols-2">
+            <SkeletonPanel />
+            <SkeletonPanel />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !data) {
+    return (
+      <div className="min-h-full bg-[#070d19] p-6 text-white">
+        <div className="mx-auto max-w-[1500px]">
+          <PageHeader
+            onRefresh={() => loadReports(true)}
+            refreshing={refreshing}
+          />
+
+          <div className="mt-8 rounded-2xl border border-red-400/20 bg-red-400/[0.06] p-10 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-400/10 text-red-400">
+              <ShieldAlert size={26} />
+            </div>
+
+            <h2 className="mt-4 text-lg font-semibold text-white">
+              No pudimos cargar los reportes
+            </h2>
+
+            <p className="mx-auto mt-2 max-w-xl text-sm text-slate-400">
+              {error}
+            </p>
+
+            <button
+              type="button"
+              onClick={() => loadReports(true)}
+              className="mt-6 inline-flex h-10 items-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white transition hover:bg-violet-500"
+            >
+              <RefreshCw size={15} />
+              Intentar nuevamente
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return (
+    <div className="min-h-full bg-[#070d19] p-6 text-white">
+      <div className="mx-auto max-w-[1500px]">
+
+        <PageHeader
+          generatedAt={data.generatedAt}
+          onRefresh={() => loadReports(true)}
+          refreshing={refreshing}
+        />
+
+        {error && (
+          <div className="mt-4 flex items-center gap-3 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-3 text-sm text-amber-300">
+            <AlertTriangle size={16} />
+            {error}
+          </div>
+        )}
+
+        {/* KPI CARDS */}
+
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+
+          <KpiCard
+            title="Equipos"
+            value={data.equipment.total}
+            description={`${data.equipment.active} activos`}
+            icon={Boxes}
+            iconClass="bg-violet-500/10 text-violet-400"
+          />
+
+          <KpiCard
+            title="Componentes"
+            value={data.components.totalUnits}
+            description={`${data.components.totalTypes} tipos registrados`}
+            icon={Package}
+            iconClass="bg-cyan-500/10 text-cyan-400"
+          />
+
+          <KpiCard
+            title="DaÃ±os"
+            value={data.damages.total}
+            description={`${data.damages.open} abiertos`}
+            icon={Wrench}
+            iconClass="bg-red-500/10 text-red-400"
+          />
+
+          <KpiCard
+            title="Movimientos"
+            value={data.movements.total}
+            description="Movimientos registrados"
+            icon={Activity}
+            iconClass="bg-blue-500/10 text-blue-400"
+          />
+
+          <KpiCard
+            title="Posiciones"
+            value={data.positions.total}
+            description={`${data.positions.occupied} ocupadas`}
+            icon={Database}
+            iconClass="bg-emerald-500/10 text-emerald-400"
+          />
+
+        </div>
+
+        {/* MAIN ANALYTICS */}
+
+        <div className="mt-5 grid gap-5 xl:grid-cols-3">
+
+          <ReportPanel
+            title="Estado de equipos"
+            description="DistribuciÃ³n actual de los activos"
+            icon={BarChart3}
+            className="xl:col-span-2"
+          >
+            <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
+
+              <div className="space-y-5">
+                {equipmentStatus.map((item) => {
+                  const percentage =
+                    data.equipment.total > 0
+                      ? Math.round(
+                          (item.value /
+                            data.equipment.total) *
+                            100,
+                        )
+                      : 0;
+
+                  const Icon = item.icon;
+
+                  return (
+                    <div key={item.label}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Icon
+                            size={16}
+                            className={item.className}
+                          />
+
+                          <span className="text-sm text-slate-300">
+                            {item.label}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-white">
+                            {item.value}
+                          </span>
+
+                          <span className="text-xs text-slate-500">
+                            {percentage}%
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[0.05]">
+                        <div
+                          className={`h-full rounded-full ${item.bar} transition-all`}
+                          style={{
+                            width: `${percentage}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.025] p-6">
+                <div
+                  className="relative flex h-40 w-40 items-center justify-center rounded-full"
+                  style={{
+                    background: `conic-gradient(#8b5cf6 ${equipmentUtilization}%, rgba(255,255,255,0.06) ${equipmentUtilization}% 100%)`,
+                  }}
+                >
+                  <div className="flex h-32 w-32 flex-col items-center justify-center rounded-full bg-[#0b1424]">
+                    <span className="text-3xl font-bold text-white">
+                      {equipmentUtilization}%
+                    </span>
+
+                    <span className="mt-1 text-xs text-slate-500">
+                      asignados
+                    </span>
+                  </div>
+                </div>
+
+                <p className="mt-5 text-sm font-medium text-slate-300">
+                  UtilizaciÃ³n de equipos
+                </p>
+
+                <p className="mt-1 text-center text-xs text-slate-500">
+                  Equipos actualmente asignados a personas o posiciones.
+                </p>
+              </div>
+
+            </div>
+          </ReportPanel>
+
+          <ReportPanel
+            title="DaÃ±os y reparaciones"
+            description="Estado de incidencias"
+            icon={Wrench}
+          >
+            <div className="space-y-3">
+
+              <MetricRow
+                label="Abiertos"
+                value={data.damages.open}
+                icon={AlertTriangle}
+                className="text-red-400"
+              />
+
+              <MetricRow
+                label="En progreso"
+                value={data.damages.inProgress}
+                icon={Clock3}
+                className="text-amber-400"
+              />
+
+              <MetricRow
+                label="Reparados"
+                value={data.damages.repaired}
+                icon={CheckCircle2}
+                className="text-emerald-400"
+              />
+
+              <MetricRow
+                label="Cancelados"
+                value={data.damages.cancelled}
+                icon={Activity}
+                className="text-slate-400"
+              />
+
+              <div className="mt-5 rounded-xl border border-red-400/10 bg-red-400/[0.04] p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-400">
+                    Alta prioridad
+                  </span>
+
+                  <span className="text-lg font-bold text-red-300">
+                    {data.damages.highPriority}
+                  </span>
+                </div>
+              </div>
+
+            </div>
+          </ReportPanel>
+
+        </div>
+
+        {/* COMPONENTS + POSITIONS */}
+
+        <div className="mt-5 grid gap-5 xl:grid-cols-2">
+
+          <ReportPanel
+            title="Inventario de componentes"
+            description="Stock actual y alertas de mÃ­nimo"
+            icon={Package}
+          >
+            <div className="grid gap-4 sm:grid-cols-3">
+
+              <MiniStat
+                label="Tipos"
+                value={data.components.totalTypes}
+              />
+
+              <MiniStat
+                label="Unidades"
+                value={data.components.totalUnits}
+              />
+
+              <MiniStat
+                label="Stock bajo"
+                value={data.components.lowStockCount}
+                danger={data.components.lowStockCount > 0}
+              />
+
+            </div>
+
+            <div className="mt-5 border-t border-white/[0.06] pt-5">
+
+              {data.components.lowStock.length === 0 ? (
+                <EmptyState
+                  icon={CheckCircle2}
+                  title="Sin alertas de stock"
+                  description="No existen componentes por debajo del stock mÃ­nimo."
+                  compact
+                />
+              ) : (
+                <div className="space-y-2">
+                  {data.components.lowStock.slice(0, 6).map((component) => (
+                    <div
+                      key={component.id}
+                      className="flex items-center justify-between rounded-xl border border-red-400/10 bg-red-400/[0.035] px-4 py-3"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-white">
+                          {component.type}
+                        </p>
+
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          MÃ­nimo requerido: {component.minimumStock}
+                        </p>
+                      </div>
+
+                      <span className="rounded-lg bg-red-400/10 px-2.5 py-1 text-xs font-bold text-red-300">
+                        {component.quantity}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+            </div>
+          </ReportPanel>
+
+          <ReportPanel
+            title="Posiciones"
+            description="OcupaciÃ³n de estaciones y ubicaciones"
+            icon={Database}
+          >
+            <div className="flex items-center gap-6">
+
+              <div
+                className="relative flex h-36 w-36 shrink-0 items-center justify-center rounded-full"
+                style={{
+                  background: `conic-gradient(#06b6d4 ${positionOccupation}%, rgba(255,255,255,0.06) ${positionOccupation}% 100%)`,
+                }}
+              >
+                <div className="flex h-28 w-28 flex-col items-center justify-center rounded-full bg-[#0b1424]">
+                  <span className="text-2xl font-bold text-white">
+                    {positionOccupation}%
+                  </span>
+
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500">
+                    ocupaciÃ³n
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex-1 space-y-4">
+
+                <MetricRow
+                  label="Total posiciones"
+                  value={data.positions.total}
+                  icon={Database}
+                  className="text-cyan-400"
+                />
+
+                <MetricRow
+                  label="Ocupadas"
+                  value={data.positions.occupied}
+                  icon={Users}
+                  className="text-violet-400"
+                />
+
+                <MetricRow
+                  label="Disponibles"
+                  value={data.positions.empty}
+                  icon={CheckCircle2}
+                  className="text-emerald-400"
+                />
+
+              </div>
+
+            </div>
+          </ReportPanel>
+
+        </div>
+
+        {/* CATEGORIES + MOVEMENTS */}
+
+        <div className="mt-5 grid gap-5 xl:grid-cols-2">
+
+          <ReportPanel
+            title="Equipos por categorÃ­a"
+            description="DistribuciÃ³n de activos registrados"
+            icon={Boxes}
+          >
+            {data.equipment.byCategory.length === 0 ? (
+              <EmptyState
+                icon={Boxes}
+                title="Sin categorÃ­as"
+                description="TodavÃ­a no existen equipos registrados para analizar."
+              />
+            ) : (
+              <div className="space-y-3">
+                {data.equipment.byCategory.map((item) => {
+                  const total = item._count.id;
+
+                  const percentage =
+                    data.equipment.total > 0
+                      ? Math.round(
+                          (total /
+                            data.equipment.total) *
+                            100,
+                        )
+                      : 0;
+
+                  return (
+                    <div key={item.category ?? "sin-categoria"}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-300">
+                          {item.category || "Sin categorÃ­a"}
+                        </span>
+
+                        <span className="text-xs font-semibold text-white">
+                          {total}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+                        <div
+                          className="h-full rounded-full bg-violet-500"
+                          style={{
+                            width: `${percentage}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </ReportPanel>
+
+          <ReportPanel
+            title="Movimientos recientes"
+            description="Ãšltimos movimientos registrados"
+            icon={Activity}
+          >
+            {data.movements.recent.length === 0 ? (
+              <EmptyState
+                icon={Activity}
+                title="Sin movimientos"
+                description="Los movimientos aparecerÃ¡n aquÃ­ automÃ¡ticamente."
+              />
+            ) : (
+              <div className="space-y-2">
+                {data.movements.recent.slice(0, 8).map((movement, index) => (
+                  <div
+                    key={
+                      String(
+                        movement.id ??
+                          movement.createdAt ??
+                          index,
+                      )
+                    }
+                    className="flex items-center gap-3 rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-3"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
+                      <Activity size={16} />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-white">
+                        {String(
+                          movement.type ??
+                            movement.action ??
+                            "Movimiento",
+                        )}
+                      </p>
+
+                      <p className="mt-0.5 truncate text-xs text-slate-500">
+                        {String(
+                          movement.createdAt ??
+                            "Fecha no disponible",
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ReportPanel>
+
+        </div>
+
+        {/* FOOTER */}
+
+        <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-white/[0.06] bg-[#0b1424] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <TrendingUp size={14} className="text-emerald-400" />
+
+            <span>
+              Los datos mostrados provienen directamente del inventario.
+            </span>
+          </div>
+
+          <div className="text-xs text-slate-600">
+            Actualizado: {formatDate(data.generatedAt)}
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+function PageHeader({
+  generatedAt,
+  onRefresh,
+  refreshing,
+  loading = false,
+}: {
+  generatedAt?: string;
+  onRefresh: () => void;
+  refreshing?: boolean;
+  loading?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
+      <div>
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400">
+            <BarChart3 size={22} />
+          </div>
+
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-white">
+              Reportes
+            </h1>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Informes y anÃ¡lisis del inventario
+            </p>
+          </div>
+        </div>
+
+        {generatedAt && (
+          <p className="mt-3 text-xs text-slate-600">
+            Ãšltima actualizaciÃ³n: {formatDate(generatedAt)}
+          </p>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={onRefresh}
+        disabled={refreshing || loading}
+        className="inline-flex h-10 items-center justify-center gap-2 self-start rounded-xl border border-white/[0.08] bg-white/[0.035] px-4 text-sm font-medium text-slate-300 transition hover:bg-white/[0.07] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <RefreshCw
+          size={15}
+          className={
+            refreshing
+              ? "animate-spin"
+              : ""
+          }
+        />
+
+        {refreshing ? "Actualizando..." : "Actualizar"}
+      </button>
+
+    </div>
+  );
+}
+
+function KpiCard({
+  title,
+  value,
+  description,
+  icon: Icon,
+  iconClass,
+}: {
+  title: string;
+  value: number;
+  description: string;
+  icon: React.ElementType;
+  iconClass: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/[0.06] bg-[#0b1424] p-5 shadow-2xl shadow-black/10">
+
+      <div className="flex items-start justify-between">
+
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+            {title}
+          </p>
+
+          <p className="mt-3 text-3xl font-bold tracking-tight text-white">
+            {value.toLocaleString("es-DO")}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-500">
+            {description}
+          </p>
+        </div>
+
+        <div
+          className={`flex h-10 w-10 items-center justify-center rounded-xl ${iconClass}`}
+        >
+          <Icon size={19} />
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+function ReportPanel({
+  title,
+  description,
+  icon: Icon,
+  children,
+  className = "",
+}: {
+  title: string;
+  description: string;
+  icon: React.ElementType;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={`overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0b1424] shadow-2xl shadow-black/10 ${className}`}
+    >
+
+      <div className="border-b border-white/[0.06] px-5 py-4">
+
+        <div className="flex items-center gap-3">
+
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400">
+            <Icon size={17} />
+          </div>
+
+          <div>
+            <h2 className="text-sm font-semibold text-white">
+              {title}
+            </h2>
+
+            <p className="mt-0.5 text-xs text-slate-500">
+              {description}
+            </p>
+          </div>
+
+        </div>
+
+      </div>
+
+      <div className="p-5">
+        {children}
+      </div>
+
+    </section>
+  );
+}
+
+function MetricRow({
+  label,
+  value,
+  icon: Icon,
+  className,
+}: {
+  label: string;
+  value: number;
+  icon: React.ElementType;
+  className: string;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-3">
+
+      <div className="flex items-center gap-3">
+
+        <Icon size={16} className={className} />
+
+        <span className="text-sm text-slate-300">
+          {label}
+        </span>
+
+      </div>
+
+      <span className="text-sm font-bold text-white">
+        {value.toLocaleString("es-DO")}
+      </span>
+
+    </div>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+  danger = false,
+}: {
+  label: string;
+  value: number;
+  danger?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
+
+      <p className="text-xs text-slate-500">
+        {label}
+      </p>
+
+      <p
+        className={`mt-2 text-2xl font-bold ${
+          danger
+            ? "text-red-300"
+            : "text-white"
+        }`}
+      >
+        {value.toLocaleString("es-DO")}
+      </p>
+
+    </div>
+  );
+}
+
+function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  compact = false,
+}: {
+  icon: React.ElementType;
+  title: string;
+  description: string;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`flex flex-col items-center justify-center text-center ${
+        compact ? "py-3" : "py-8"
+      }`}
+    >
+      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/[0.035] text-slate-600">
+        <Icon size={20} />
+      </div>
+
+      <p className="mt-3 text-sm font-medium text-slate-300">
+        {title}
+      </p>
+
+      <p className="mt-1 max-w-sm text-xs leading-5 text-slate-600">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function SkeletonCard() {
+  return (
+    <div className="h-[145px] animate-pulse rounded-2xl border border-white/[0.06] bg-[#0b1424]" />
+  );
+}
+
+function SkeletonPanel({
+  className = "",
+}: {
+  className?: string;
+}) {
+  return (
+    <div
+      className={`h-[300px] animate-pulse rounded-2xl border border-white/[0.06] bg-[#0b1424] ${className}`}
+    />
+  );
+}
+
+function formatDate(value: string) {
+  if (!value) {
+    return "No disponible";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString("es-DO", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}

@@ -1,0 +1,5770 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import {
+  AlertTriangle,
+  BriefcaseBusiness,
+  Building2,
+  CalendarClock,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  ExternalLink,
+  Eye,
+  FileSpreadsheet,
+  FileText,
+  Filter,
+  FileCheck2,
+  History,
+  IdCard,
+  Laptop,
+  Loader2,
+  Mail,
+  MapPin,
+  MoreHorizontal,
+  PackageCheck,
+  Pencil,
+  Phone,
+  Plus,
+  Power,
+  PowerOff,
+  RefreshCcw,
+  RotateCcw,
+  Save,
+  Search,
+  Upload,
+  UserRound,
+  Users as UsersIcon,
+  UserCheck,
+  UserMinus,
+  UserX,
+  X,
+} from "lucide-react";
+
+import * as XLSX from "xlsx";
+
+const USER_JOB_TITLES = ["Agente", "Supervisor", "Senior Supervisor", "Gerente", "Director", "Vicepresidente", "Presidente", "CEO", "Closer"];
+
+type InventoryPosition = {
+  id: string;
+  code: string;
+  name?: string | null;
+
+  locationId: string;
+  areaId: string;
+
+  wing?: string | null;
+
+  status: string;
+
+  userCell?: string | null;
+  equipmentCell?: string | null;
+
+  assignedUserId?: string | null;
+  inventoryPersonId?: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+};
+
+type PositionOption = InventoryPosition & {
+  location?: {
+    id: string;
+    name: string;
+    floorNumber?: number | null;
+    wing?: string | null;
+  } | null;
+
+  area?: {
+    id: string;
+    name: string;
+  } | null;
+};
+
+type InventoryEquipment = {
+  id: string;
+
+  category: string;
+  brand: string;
+  model?: string | null;
+
+  serial?: string | null;
+  assetTag?: string | null;
+
+  condition: string;
+  status: string;
+
+  location?: string | null;
+  assignedUser?: string | null;
+
+  assignedUserId?: string | null;
+  inventoryPersonId?: string | null;
+
+  departmentId?: string | null;
+  mapLocationId?: string | null;
+  positionId?: string | null;
+
+  entryDate: string;
+
+  createdAt: string;
+  updatedAt: string;
+};
+
+type PositionAccessory = {
+  id: string;
+  equipmentId?: string;
+  role?: string | null;
+  category: string;
+  brand: string;
+  model?: string | null;
+  serial?: string | null;
+  pcName?: string | null;
+  quantity?: number;
+};
+
+type InventoryPerson = {
+  id: string;
+
+  employeeId: string;
+
+  firstName: string;
+  lastName: string;
+
+  email?: string | null;
+  phone?: string | null;
+  jobTitle?: string | null;
+
+  status: string;
+
+  departmentId?: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+
+  department?: {
+    id: string;
+    name: string;
+  } | null;
+
+  position?: InventoryPosition | null;
+
+  equipment?: InventoryEquipment[];
+};
+
+type ImportRow = {
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  email?: string;
+  phone?: string;
+  jobTitle?: string;
+  status?: string;
+  department?: string;
+};
+
+type UserTab =
+  | "information"
+  | "equipment"
+  | "location"
+  | "documents"
+  | "history";
+
+type ExportMode = "all" | "active" | "inactive" | "equipment" | "department";
+
+type EditUserForm = {
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  jobTitle: string;
+  departmentId: string;
+  status: string;
+};
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+// Enviar cookie de sesión a todas las rutas internas protegidas.
+const authedFetch: typeof fetch = (input, init) => fetch(input, {...init, credentials: "include"});
+
+const isHeadsetLike = (value?: string | null) => {
+  const normalized = (value || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase();
+
+  return /HEADSET|HEADPHONE|AURICULAR|DIADEMA|AUDIFONO/.test(normalized);
+};
+
+type UserActivityItem = {
+  id: string;
+
+  type:
+    | "CREATED"
+    | "UPDATED"
+    | "EQUIPMENT"
+    | "POSITION";
+
+  title: string;
+
+  description: string;
+
+  date?: string | null;
+};
+
+export default function Users() {
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const [users, setUsers] = useState<InventoryPerson[]>([]);
+  const [catalogDepartments, setCatalogDepartments] = useState<Array<{ id: string; name: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+
+  const [departmentFilter, setDepartmentFilter] = useState("ALL");
+
+  const [locationFilter, setLocationFilter] = useState("ALL");
+
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const [pageSize, setPageSize] = useState(10);
+
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+
+  const [actionMenuUserId, setActionMenuUserId] = useState<string | null>(null);
+
+  const [changingUserStatus, setChangingUserStatus] = useState<string | null>(
+    null,
+  );
+
+  const [allEquipment, setAllEquipment] =
+  useState<InventoryEquipment[]>([]);
+
+const [positions, setPositions] =
+  useState<PositionOption[]>([]);
+
+const [positionAccessories, setPositionAccessories] =
+  useState<PositionAccessory[]>([]);
+
+const [loadingPositionAccessories, setLoadingPositionAccessories] =
+  useState(false);
+
+
+
+const [showAssignEquipment, setShowAssignEquipment] =
+  useState(false);
+
+const [showAssignPosition, setShowAssignPosition] =
+  useState(false);
+
+const [selectedEquipmentId, setSelectedEquipmentId] =
+  useState("");
+
+const [selectedPositionId, setSelectedPositionId] =
+  useState("");
+
+const [equipmentSearch, setEquipmentSearch] =
+  useState("");
+
+const [loadingAssignmentData, setLoadingAssignmentData] =
+  useState(false);
+
+const [savingAssignment, setSavingAssignment] =
+  useState(false);
+
+const [returningEquipmentId, setReturningEquipmentId] =
+  useState<string | null>(null);
+
+  const [selectedUser, setSelectedUser] = useState<InventoryPerson | null>(
+    null,
+  );
+
+  const [activeUserTab, setActiveUserTab] = useState<UserTab>("information");
+
+  const [showCreate, setShowCreate] = useState(false);
+
+  const [showEdit, setShowEdit] = useState(false);
+
+  const [editingUser, setEditingUser] = useState<InventoryPerson | null>(null);
+
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [editSession, setEditSession] = useState(0);
+
+  const [editUser, setEditUser] = useState<EditUserForm>({
+    employeeId: "",
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    jobTitle: "",
+    departmentId: "",
+    status: "ACTIVE",
+  });
+
+  const [newUser, setNewUser] = useState({
+    employeeId: "",
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    jobTitle: "",
+    status: "ACTIVE",
+  });
+
+  const [importRows, setImportRows] = useState<ImportRow[]>([]);
+  const [showImport, setShowImport] = useState(false);
+  const [importing, setImporting] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadUsers = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await authedFetch(`${API_URL}/inventory-people`);
+
+      if (!response.ok) {
+        throw new Error(`No se pudieron cargar los usuarios (HTTP ${response.status}).`);
+      }
+
+      const data = await response.json();
+
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "No fue posible conectar con el servidor.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+const loadAssignmentData = async () => {
+  try {
+    setLoadingAssignmentData(true);
+
+    const [
+      equipmentResponse,
+      positionsResponse,
+    ] = await Promise.all([
+      authedFetch(`${API_URL}/equipment`),
+      authedFetch(`${API_URL}/positions`),
+    ]);
+
+    if (!equipmentResponse.ok) {
+      throw new Error(
+        "No fue posible cargar los equipos.",
+      );
+    }
+
+    if (!positionsResponse.ok) {
+      throw new Error(
+        "No fue posible cargar las posiciones.",
+      );
+    }
+
+    const equipmentData =
+      await equipmentResponse.json();
+
+    const positionData =
+      await positionsResponse.json();
+
+    setAllEquipment(
+      Array.isArray(equipmentData)
+        ? equipmentData
+        : [],
+    );
+
+    setPositions(
+      Array.isArray(positionData)
+        ? positionData
+        : [],
+    );
+  } catch (err) {
+    console.error(err);
+
+    alert(
+      err instanceof Error
+        ? err.message
+        : "No fue posible cargar información de asignación.",
+    );
+  } finally {
+    setLoadingAssignmentData(false);
+  }
+};
+  const personalHeadsets = useMemo(
+    () =>
+      positionAccessories.filter(
+        (item) => isHeadsetLike(item.role) || isHeadsetLike(item.category),
+      ),
+    [positionAccessories],
+  );
+
+  useEffect(() => {
+    const positionId = selectedUser?.position?.id;
+
+    if (!positionId) {
+      setPositionAccessories([]);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingPositionAccessories(true);
+
+    authedFetch(`${API_URL}/positions/${positionId}/accessories`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(String(response.status));
+        }
+
+        return response.json();
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setPositionAccessories(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPositionAccessories([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingPositionAccessories(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedUser?.position?.id]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
+
+  useEffect(() => {
+    let active = true;
+    authedFetch(`${API_URL}/inventory-people/departments`)
+      .then(async (response) => {
+        if (!response.ok) return [];
+        const data = await response.json();
+        return Array.isArray(data) ? data : [];
+      })
+      .then((data) => { if (active) setCatalogDepartments(data); })
+      .catch(() => { /* Keep existing linked department options. */ });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (
+        exportMenuRef.current &&
+        !exportMenuRef.current.contains(event.target as Node)
+      ) {
+        setExportMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, []);
+
+  const departments = useMemo(() => {
+    const values = users
+      .map((user) => user.department?.name)
+      .filter(Boolean) as string[];
+
+    return [...new Set(values)].sort();
+  }, [users]);
+
+  const departmentOptions = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+      }
+    >();
+
+    users.forEach((user) => {
+      if (user.department) map.set(user.department.id, user.department);
+    });
+    catalogDepartments.forEach((department) => map.set(department.id, department));
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [users, catalogDepartments]);
+
+  const getUserLocation = (user: InventoryPerson): string => {
+    // Use the permanent position code instead of an outdated display name.
+    if (user.position?.code?.trim()) return user.position.code.trim();
+    const directLocation = user.equipment?.find((item) => item.location?.trim())?.location;
+    return directLocation?.trim() || "Sin posición asignada";
+  };
+
+  const getEquipmentName = (
+    equipment: InventoryEquipment,
+  ): string => {
+    return [
+      equipment.category,
+      equipment.brand,
+      equipment.model,
+    ]
+      .filter(
+        (value): value is string =>
+          Boolean(value?.trim()),
+      )
+      .join(" ");
+  };
+
+  const availableEquipment = useMemo(() => {
+    const query =
+      equipmentSearch
+        .trim()
+        .toLowerCase();
+
+    return allEquipment.filter(
+      (equipment) => {
+        const isAvailable =
+          !equipment.inventoryPersonId &&
+          !equipment.positionId &&
+          equipment.status
+            ?.toUpperCase() !==
+            "INACTIVE";
+
+        if (!isAvailable) {
+          return false;
+        }
+
+        if (!query) {
+          return true;
+        }
+
+        const searchable = [
+          equipment.category,
+          equipment.brand,
+          equipment.model,
+          equipment.assetTag,
+          equipment.serial,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        return searchable.includes(
+          query,
+        );
+      },
+    );
+  }, [
+    allEquipment,
+    equipmentSearch,
+  ]);
+
+  const availablePositions = useMemo(() => {
+    return positions.filter(
+      (position) =>
+        !position.inventoryPersonId ||
+        position.inventoryPersonId ===
+          selectedUser?.id,
+    );
+  }, [
+    positions,
+    selectedUser,
+  ]);
+const formatDate = (
+  value?: string | null,
+): string => {
+  if (!value) {
+    return "Sin fecha";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Sin fecha";
+  }
+
+  return new Intl.DateTimeFormat(
+    "es-DO",
+    {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    },
+  ).format(date);
+};
+
+
+const formatDateTime = (
+  value?: string | null,
+): string => {
+  if (!value) {
+    return "Sin fecha";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Sin fecha";
+  }
+
+  return new Intl.DateTimeFormat(
+    "es-DO",
+    {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    },
+  ).format(date);
+};
+
+  const formatEquipmentStatus = (status?: string | null): string => {
+    switch (status?.toUpperCase()) {
+      case "ACTIVE":
+        return "Activo";
+
+      case "INACTIVE":
+        return "Inactivo";
+
+      case "ASSIGNED":
+        return "Asignado";
+
+      case "AVAILABLE":
+        return "Disponible";
+
+      case "MAINTENANCE":
+        return "Mantenimiento";
+
+      case "DAMAGED":
+        return "Dañado";
+
+      default:
+        return status || "Sin estado";
+    }
+  };
+
+  const formatEquipmentCondition = (condition?: string | null): string => {
+    switch (condition?.toUpperCase()) {
+      case "AVAILABLE":
+        return "Disponible";
+
+      case "ASSIGNED":
+        return "Asignado";
+
+      case "IN_USE":
+        return "En uso";
+
+      case "DAMAGED":
+        return "Dañado";
+
+      case "REPAIR":
+        return "En reparación";
+
+      case "MAINTENANCE":
+        return "Mantenimiento";
+
+      default:
+        return condition || "Sin condición";
+    }
+  };
+
+  const getUserActivity = (
+  user: InventoryPerson,
+): UserActivityItem[] => {
+  const activities:
+    UserActivityItem[] = [];
+
+  /*
+   * Usuario creado
+   */
+
+  activities.push({
+    id: `created-${user.id}`,
+
+    type: "CREATED",
+
+    title:
+      "Usuario registrado",
+
+    description:
+      `${user.firstName} ${user.lastName} fue registrado en el inventario.`,
+
+    date:
+      user.createdAt,
+  });
+
+  /*
+   * Última actualización.
+   */
+
+  if (
+    user.updatedAt &&
+    user.updatedAt !==
+      user.createdAt
+  ) {
+    activities.push({
+      id: `updated-${user.id}`,
+
+      type: "UPDATED",
+
+      title:
+        "Información actualizada",
+
+      description:
+        "Los datos del usuario fueron modificados.",
+
+      date:
+        user.updatedAt,
+    });
+  }
+
+  /*
+   * Equipos actualmente asociados.
+   */
+
+  user.equipment?.forEach(
+    (equipment) => {
+      activities.push({
+        id:
+          `equipment-${equipment.id}`,
+
+        type: "EQUIPMENT",
+
+        title:
+          "Equipo asociado",
+
+        description:
+          `${
+            getEquipmentName(
+              equipment,
+            ) ||
+            "Equipo"
+          } · ${
+            equipment.assetTag ||
+            equipment.serial ||
+            "Sin identificador"
+          }`,
+
+        date:
+          equipment.updatedAt ||
+          equipment.entryDate,
+      });
+    },
+  );
+
+  /*
+   * Posición actual.
+   */
+
+  if (user.position) {
+    activities.push({
+      id:
+        `position-${user.position.id}`,
+
+      type: "POSITION",
+
+      title:
+        "Posición asociada",
+
+      description:
+        `${
+          user.position.name ||
+          user.position.code
+        }`,
+
+      date:
+        user.position.updatedAt,
+    });
+  }
+
+  return activities.sort(
+    (a, b) => {
+      const dateA =
+        a.date
+          ? new Date(
+              a.date,
+            ).getTime()
+          : 0;
+
+      const dateB =
+        b.date
+          ? new Date(
+              b.date,
+            ).getTime()
+          : 0;
+
+      return dateB - dateA;
+    },
+  );
+};
+
+  const locations = useMemo(() => {
+    const values = users
+      .map((user) => getUserLocation(user))
+      .filter((location) => location !== "Sin ubicación");
+
+    return [...new Set(values)].sort();
+  }, [users]);
+
+  const filteredUsers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return users.filter((user) => {
+      const fullName = `${user.firstName} ${user.lastName}`.toLowerCase();
+
+      const matchesSearch =
+        !query ||
+        fullName.includes(query) ||
+        user.employeeId.toLowerCase().includes(query) ||
+        (user.email ?? "").toLowerCase().includes(query) ||
+        (user.jobTitle ?? "").toLowerCase().includes(query);
+
+      const matchesStatus =
+        statusFilter === "ALL" || user.status.toUpperCase() === statusFilter;
+
+      const matchesDepartment =
+        departmentFilter === "ALL" ||
+        user.department?.name === departmentFilter;
+
+      const location = getUserLocation(user);
+
+      const matchesLocation =
+        locationFilter === "ALL" || location === locationFilter;
+
+      return (
+        matchesSearch && matchesStatus && matchesDepartment && matchesLocation
+      );
+    });
+  }, [users, search, statusFilter, departmentFilter, locationFilter]);
+
+  const activeUsers = users.filter(
+    (user) => user.status.toUpperCase() === "ACTIVE",
+  ).length;
+
+  const inactiveUsers = users.filter(
+    (user) => user.status.toUpperCase() !== "ACTIVE",
+  ).length;
+
+  const activePercentage =
+    users.length > 0 ? ((activeUsers / users.length) * 100).toFixed(1) : "0.0";
+
+  const inactivePercentage =
+    users.length > 0
+      ? ((inactiveUsers / users.length) * 100).toFixed(1)
+      : "0.0";
+
+  const pendingReturns = useMemo(() => {
+  return users.reduce(
+    (total, user) => {
+      const isInactive =
+        user.status.toUpperCase() !==
+        "ACTIVE";
+
+      if (!isInactive) {
+        return total;
+      }
+
+      const assignedEquipment =
+        user.equipment?.length ?? 0;
+
+      return (
+        total +
+        assignedEquipment
+      );
+    },
+    0,
+  );
+}, [users]);
+
+  // Indicators derived from current directory links. No simulated stock quantities.
+  const usersWithPersonalEquipment = users.filter((user) =>
+    (user.equipment ?? []).some((equipment) => !equipment.positionId),
+  ).length;
+  const [usersWithHeadsetAtPosition, setUsersWithHeadsetAtPosition] = useState<string[]>([]);
+  useEffect(() => {
+    let active = true;
+    const candidates = users.filter((user) => user.position?.id);
+    Promise.all(candidates.map(async (user) => {
+      try {
+        const response = await authedFetch(`${API_URL}/positions/${user.position!.id}/accessories`, { cache: "no-store" });
+        if (!response.ok) return null;
+        const payload = await response.json();
+        const items = Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : [];
+        return items.some((item: PositionAccessory) => isHeadsetLike(item.role) || isHeadsetLike(item.category)) ? user.id : null;
+      } catch { return null; }
+    })).then((ids) => { if (active) setUsersWithHeadsetAtPosition(ids.filter((id): id is string => !!id)); });
+    return () => { active = false; };
+  }, [users]);
+  const usersWithLinkedEquipment = users.filter((user) =>
+    (user.equipment ?? []).some((equipment) => !equipment.positionId) || usersWithHeadsetAtPosition.includes(user.id),
+  ).length;
+  const usersWithoutPosition = users.filter((user) => !user.position?.id).length;
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
+
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const paginatedUsers = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+
+    return filteredUsers.slice(start, start + pageSize);
+  }, [filteredUsers, safeCurrentPage, pageSize]);
+
+  const firstVisibleUser =
+    filteredUsers.length === 0 ? 0 : (safeCurrentPage - 1) * pageSize + 1;
+
+  const lastVisibleUser = Math.min(
+    safeCurrentPage * pageSize,
+    filteredUsers.length,
+  );
+
+  const clearFilters = () => {
+    setSearch("");
+    setStatusFilter("ALL");
+    setDepartmentFilter("ALL");
+    setLocationFilter("ALL");
+    setCurrentPage(1);
+  };
+
+  const toggleUserSelection = (userId: string) => {
+    setSelectedUsers((current) =>
+      current.includes(userId)
+        ? current.filter((id) => id !== userId)
+        : [...current, userId],
+    );
+  };
+
+  const allVisibleSelected =
+    paginatedUsers.length > 0 &&
+    paginatedUsers.every((user) => selectedUsers.includes(user.id));
+
+  const toggleAllVisibleUsers = () => {
+    if (allVisibleSelected) {
+      const visibleIds = new Set(paginatedUsers.map((user) => user.id));
+
+      setSelectedUsers((current) =>
+        current.filter((id) => !visibleIds.has(id)),
+      );
+
+      return;
+    }
+
+    setSelectedUsers((current) => [
+      ...new Set([...current, ...paginatedUsers.map((user) => user.id)]),
+    ]);
+  };
+  const openUserDetails = (
+  user: InventoryPerson,
+) => {
+  setActionMenuUserId(null);
+
+  setSelectedUser(user);
+
+  setActiveUserTab("information");
+};
+
+const toggleUserStatus = async (
+  user: InventoryPerson,
+) => {
+  const currentStatus =
+    user.status.toUpperCase();
+
+    const newStatus = currentStatus === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+
+    const actionText = newStatus === "ACTIVE" ? "activar" : "desactivar";
+
+    const confirmed = window.confirm(
+      `¿Seguro que deseas ${actionText} a ${user.firstName} ${user.lastName}?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setChangingUserStatus(user.id);
+      setActionMenuUserId(null);
+
+      const response = await authedFetch(
+        `${API_URL}/inventory-people/${user.id}/status`,
+        {
+          method: "PATCH",
+
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          body: JSON.stringify({
+            status: newStatus,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+
+        throw new Error(
+          errorData?.message || "No fue posible cambiar el estado del usuario.",
+        );
+      }
+
+      /*
+       * Actualización local inmediata.
+       */
+
+      setUsers((current) =>
+        current.map((item) =>
+          item.id === user.id
+            ? {
+                ...item,
+                status: newStatus,
+              }
+            : item,
+        ),
+      );
+
+      /*
+       * Si el drawer de esta persona
+       * está abierto, actualizarlo también.
+       */
+
+      setSelectedUser((current) => {
+        if (current?.id !== user.id) {
+          return current;
+        }
+
+        return {
+          ...current,
+          status: newStatus,
+        };
+      });
+
+      /*
+       * Confirmamos luego con backend.
+       */
+
+      await loadUsers();
+    } catch (err) {
+      console.error(err);
+
+      alert(
+        err instanceof Error
+          ? err.message
+          : "No fue posible cambiar el estado.",
+      );
+    } finally {
+      setChangingUserStatus(null);
+    }
+  };
+  const openAssignEquipment = async (
+  user: InventoryPerson,
+) => {
+  setSelectedUser(user);
+
+  setSelectedEquipmentId("");
+
+  setEquipmentSearch("");
+
+  await loadAssignmentData();
+
+  setShowAssignEquipment(true);
+};
+  useEffect(() => {
+    setCurrentPage(1);
+
+    setActionMenuUserId(null);
+  }, [search, statusFilter, departmentFilter, locationFilter, pageSize]);
+  const assignEquipmentToUser = async () => {
+    if (!selectedUser || !selectedEquipmentId) {
+      alert("Selecciona un equipo.");
+      return;
+    }
+
+    const equipment = allEquipment.find(
+      (item) => item.id === selectedEquipmentId,
+    );
+
+    if (!equipment) {
+      alert("No se encontró el equipo seleccionado.");
+      return;
+    }
+
+    try {
+      setSavingAssignment(true);
+
+      const fullName =
+        `${selectedUser.firstName} ${selectedUser.lastName}`;
+
+      const response = await authedFetch(
+        `${API_URL}/equipment/${equipment.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            inventoryPersonId: selectedUser.id,
+            assignedUser: fullName,
+            condition: "ASSIGNED",
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error("No fue posible asignar el equipo.");
+      }
+
+      await authedFetch(
+        `${API_URL}/movements`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            equipmentId: equipment.id,
+            action: "ASSIGN",
+            fromLocation: equipment.location || null,
+            toLocation: getUserLocation(selectedUser),
+            assignedUser: fullName,
+            createdBy: "Usuarios",
+          }),
+        },
+      ).catch(() => null);
+
+      const userResponse = await authedFetch(
+        `${API_URL}/inventory-people/${selectedUser.id}`,
+      );
+
+      if (userResponse.ok) {
+        const refreshedUser: InventoryPerson =
+          await userResponse.json();
+
+        setSelectedUser(refreshedUser);
+      }
+
+      await loadUsers();
+      await loadAssignmentData();
+
+      setShowAssignEquipment(false);
+      setSelectedEquipmentId("");
+
+      alert("Equipo asignado correctamente.");
+    } catch (err) {
+      console.error(err);
+
+      alert(
+        err instanceof Error
+          ? err.message
+          : "No fue posible asignar el equipo.",
+      );
+    } finally {
+      setSavingAssignment(false);
+    }
+  };
+
+  const returnEquipmentFromUser = async (
+    equipment: InventoryEquipment,
+  ) => {
+    if (!selectedUser) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `¿Deseas retirar ${getEquipmentName(
+        equipment,
+      )} de ${selectedUser.firstName} ${selectedUser.lastName}?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setReturningEquipmentId(equipment.id);
+
+      const response = await authedFetch(
+        `${API_URL}/equipment/${equipment.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            inventoryPersonId: null,
+            assignedUser: null,
+            condition: "AVAILABLE",
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error("No fue posible retirar el equipo.");
+      }
+
+      await authedFetch(
+        `${API_URL}/movements`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            equipmentId: equipment.id,
+            action: "RETURN",
+            fromLocation: getUserLocation(selectedUser),
+            toLocation: equipment.location || null,
+            assignedUser:
+              `${selectedUser.firstName} ${selectedUser.lastName}`,
+            createdBy: "Usuarios",
+          }),
+        },
+      ).catch(() => null);
+
+      const refreshedResponse = await authedFetch(
+        `${API_URL}/inventory-people/${selectedUser.id}`,
+      );
+
+      if (refreshedResponse.ok) {
+        const refreshedUser: InventoryPerson =
+          await refreshedResponse.json();
+
+        setSelectedUser(refreshedUser);
+      }
+
+      await loadUsers();
+      await loadAssignmentData();
+    } catch (err) {
+      console.error(err);
+
+      alert(
+        err instanceof Error
+          ? err.message
+          : "No fue posible retirar el equipo.",
+      );
+    } finally {
+      setReturningEquipmentId(null);
+    }
+  };
+
+  const openAssignPosition = async (
+    user: InventoryPerson,
+  ) => {
+    setSelectedUser(user);
+    setSelectedPositionId(user.position?.id || "");
+
+    await loadAssignmentData();
+
+    setShowAssignPosition(true);
+  };
+
+  const assignPositionToUser = async () => {
+    if (!selectedUser) {
+      return;
+    }
+
+    try {
+      setSavingAssignment(true);
+
+      if (
+        selectedUser.position &&
+        selectedUser.position.id !== selectedPositionId
+      ) {
+        const oldPositionResponse = await authedFetch(
+          `${API_URL}/positions/${selectedUser.position.id}`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              inventoryPersonId: null,
+              status: "EMPTY",
+            }),
+          },
+        );
+
+        if (!oldPositionResponse.ok) {
+          throw new Error(
+            "No fue posible liberar la posición anterior.",
+          );
+        }
+      }
+
+      if (selectedPositionId) {
+        const response = await authedFetch(
+          `${API_URL}/positions/${selectedPositionId}`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              inventoryPersonId: selectedUser.id,
+              status: "OCCUPIED",
+            }),
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            "No fue posible asignar la posición.",
+          );
+        }
+      }
+
+      const refreshedResponse = await authedFetch(
+        `${API_URL}/inventory-people/${selectedUser.id}`,
+      );
+
+      if (refreshedResponse.ok) {
+        const refreshedUser: InventoryPerson =
+          await refreshedResponse.json();
+
+        setSelectedUser(refreshedUser);
+      }
+
+      await loadUsers();
+      await loadAssignmentData();
+
+      setShowAssignPosition(false);
+
+      alert(
+        selectedPositionId
+          ? "Posición asignada correctamente."
+          : "Posición retirada correctamente.",
+      );
+    } catch (err) {
+      console.error(err);
+
+      alert(
+        err instanceof Error
+          ? err.message
+          : "No fue posible actualizar la posición.",
+      );
+    } finally {
+      setSavingAssignment(false);
+    }
+  };
+const openEditUser = (user: InventoryPerson) => {
+    // Limpiar cualquier sesión anterior
+    setShowEdit(false);
+    setEditingUser(null);
+
+    const freshForm: EditUserForm = {
+      employeeId: user.employeeId ?? "",
+
+      firstName: user.firstName ?? "",
+
+      lastName: user.lastName ?? "",
+
+      email: user.email ?? "",
+
+      phone: user.phone ?? "",
+
+      jobTitle: user.jobTitle ?? "",
+
+      departmentId: user.department?.id ?? "",
+
+      status: user.status?.toUpperCase() || "ACTIVE",
+    };
+
+    setEditUser(freshForm);
+    setEditingUser(user);
+
+    // Abrir después de preparar el estado
+    requestAnimationFrame(() => {
+      setShowEdit(true);
+    });
+  };
+
+  const closeEditUser = () => {
+    if (savingEdit) {
+      return;
+    }
+
+    setShowEdit(false);
+    setEditingUser(null);
+
+    setEditUser({
+      employeeId: "",
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
+      jobTitle: "",
+      departmentId: "",
+      status: "ACTIVE",
+    });
+  };
+
+  const saveEditedUser = async () => {
+    if (!editingUser) {
+      return;
+    }
+
+    if (
+      !editUser.employeeId.trim() ||
+      !editUser.firstName.trim() ||
+      !editUser.lastName.trim()
+    ) {
+      alert("Employee ID, nombre y apellido son obligatorios.");
+
+      return;
+    }
+
+    try {
+      setSavingEdit(true);
+
+      /*
+       * 1. Actualizar información general.
+       */
+
+      const updateResponse = await authedFetch(
+        `${API_URL}/inventory-people/${editingUser.id}`,
+        {
+          method: "PUT",
+
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          body: JSON.stringify({
+            employeeId: editUser.employeeId.trim(),
+
+            firstName: editUser.firstName.trim(),
+
+            lastName: editUser.lastName.trim(),
+
+            email: editUser.email.trim() || null,
+
+            phone: editUser.phone.trim() || null,
+
+            jobTitle: editUser.jobTitle.trim() || null,
+
+            departmentId: editUser.departmentId || null,
+          }),
+        },
+      );
+
+      if (!updateResponse.ok) {
+        const errorData = await updateResponse.json().catch(() => null);
+
+        throw new Error(
+          errorData?.message || "No se pudo actualizar el usuario.",
+        );
+      }
+
+      /*
+       * 2. Actualizar estado solamente
+       *    si cambió.
+       */
+
+      if (editingUser.status.toUpperCase() !== editUser.status.toUpperCase()) {
+        const statusResponse = await authedFetch(
+          `${API_URL}/inventory-people/${editingUser.id}/status`,
+          {
+            method: "PATCH",
+
+            headers: {
+              "Content-Type": "application/json",
+            },
+
+            body: JSON.stringify({
+              status: editUser.status,
+            }),
+          },
+        );
+
+        if (!statusResponse.ok) {
+          const errorData = await statusResponse.json().catch(() => null);
+
+          throw new Error(
+            errorData?.message ||
+              "Los datos se actualizaron, pero no fue posible cambiar el estado.",
+          );
+        }
+      }
+
+      /*
+       * 3. Volvemos a pedir los datos
+       *    actualizados al backend.
+       */
+
+      const refreshedResponse = await authedFetch(
+        `${API_URL}/inventory-people/${editingUser.id}`,
+      );
+
+      let refreshedUser: InventoryPerson | null = null;
+
+      if (refreshedResponse.ok) {
+        refreshedUser = await refreshedResponse.json();
+      }
+
+      /*
+       * 4. Refrescar lista general.
+       */
+
+      await loadUsers();
+
+      /*
+       * 5. Si el drawer estaba mostrando
+       *    este usuario, mantenerlo
+       *    actualizado.
+       */
+
+      if (refreshedUser) {
+        setSelectedUser((current) => {
+          if (current?.id === refreshedUser.id) {
+            return refreshedUser;
+          }
+
+          return current;
+        });
+      }
+
+      setShowEdit(false);
+      setEditingUser(null);
+
+      setEditUser({
+        employeeId: "",
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        jobTitle: "",
+        departmentId: "",
+        status: "ACTIVE",
+      });
+
+      alert("Usuario actualizado correctamente.");
+    } catch (err) {
+      console.error(err);
+
+      alert(
+        err instanceof Error
+          ? err.message
+          : "No fue posible actualizar el usuario.",
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const exportExcel = (mode: ExportMode = "all") => {
+    let sourceUsers = [...users];
+
+    let sheetName = "Usuarios";
+
+    let fileSuffix = "Roster-Completo";
+
+    switch (mode) {
+      case "active":
+        sourceUsers = users.filter(
+          (user) => user.status.toUpperCase() === "ACTIVE",
+        );
+
+        sheetName = "Usuarios Activos";
+
+        fileSuffix = "Usuarios-Activos";
+
+        break;
+
+      case "inactive":
+        sourceUsers = users.filter(
+          (user) => user.status.toUpperCase() !== "ACTIVE",
+        );
+
+        sheetName = "Usuarios Inactivos";
+
+        fileSuffix = "Usuarios-Inactivos";
+
+        break;
+
+      case "equipment":
+        sheetName = "Equipos por Usuario";
+
+        fileSuffix = "Equipos-por-Usuario";
+
+        break;
+
+      case "department":
+        sheetName = "Por Departamento";
+
+        fileSuffix = "Usuarios-por-Departamento";
+
+        sourceUsers = [...users].sort((a, b) =>
+          (a.department?.name || "").localeCompare(b.department?.name || ""),
+        );
+
+        break;
+
+      default:
+        sourceUsers = [...users];
+
+        sheetName = "Roster Completo";
+
+        fileSuffix = "Roster-Completo";
+    }
+
+    const rows = sourceUsers.map((user) => {
+      const equipmentCount = Array.isArray(user.equipment)
+        ? user.equipment.length
+        : 0;
+
+      return {
+        "Employee ID": user.employeeId,
+
+        Nombre: user.firstName,
+
+        Apellido: user.lastName,
+
+        "Nombre completo": `${user.firstName} ${user.lastName}`,
+
+        Correo: user.email ?? "",
+
+        Teléfono: user.phone ?? "",
+
+        Cargo: user.jobTitle ?? "",
+
+        Departamento: user.department?.name ?? "Sin departamento",
+
+        Ubicación: getUserLocation(user),
+
+        Estado: user.status,
+
+        "Equipos asignados": equipmentCount,
+
+        "Detalle equipos":
+          user.equipment
+            ?.map((equipment) => {
+              const name = getEquipmentName(equipment);
+
+              const identifier =
+                equipment.assetTag || equipment.serial || "Sin ID";
+
+              return `${name} (${identifier})`;
+            })
+            .join(" | ") || "",
+
+        "Fecha creación": user.createdAt,
+
+        "Última actualización": user.updatedAt,
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+
+    const workbook = XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.slice(0, 31));
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    XLSX.writeFile(workbook, `IT-Operations-${fileSuffix}-${today}.xlsx`);
+
+    setExportMenuOpen(false);
+  };
+
+  const handleImportFile = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    try {
+      const buffer = await file.arrayBuffer();
+
+      const workbook = XLSX.read(buffer, {
+        type: "array",
+      });
+
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+        firstSheet,
+        {
+          defval: "",
+        },
+      );
+
+      const normalized: ImportRow[] = rows
+        .map((row) => ({
+          employeeId: String(
+            row["Employee ID"] ?? row["employeeId"] ?? row["ID"] ?? "",
+          ).trim(),
+
+          firstName: String(row["Nombre"] ?? row["firstName"] ?? "").trim(),
+
+          lastName: String(row["Apellido"] ?? row["lastName"] ?? "").trim(),
+
+          email: String(row["Correo"] ?? row["email"] ?? "").trim(),
+
+          phone: String(row["Teléfono"] ?? row["phone"] ?? "").trim(),
+
+          jobTitle: String(row["Cargo"] ?? row["jobTitle"] ?? "").trim(),
+
+          status:
+            String(row["Estado"] ?? row["status"] ?? "ACTIVE").trim() ||
+            "ACTIVE",
+
+          department: String(
+            row["Departamento"] ?? row["department"] ?? "",
+          ).trim(),
+        }))
+        .filter((row) => row.employeeId && row.firstName && row.lastName);
+
+      setImportRows(normalized);
+      setShowImport(true);
+    } catch (err) {
+      console.error(err);
+      alert("No fue posible leer el archivo Excel.");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const confirmImport = async () => {
+    if (!importRows.length) return;
+
+    try {
+      setImporting(true);
+
+      let created = 0;
+      let skipped = 0;
+
+      for (const row of importRows) {
+        const exists = users.some(
+          (user) =>
+            user.employeeId.toLowerCase() === row.employeeId.toLowerCase(),
+        );
+
+        if (exists) {
+          skipped++;
+          continue;
+        }
+
+        const response = await authedFetch(`${API_URL}/inventory-people`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            employeeId: row.employeeId,
+            firstName: row.firstName,
+            lastName: row.lastName,
+            email: row.email || undefined,
+            phone: row.phone || undefined,
+            jobTitle: row.jobTitle || undefined,
+            status: row.status || "ACTIVE",
+          }),
+        });
+
+        if (response.ok) {
+          created++;
+        }
+      }
+
+      setShowImport(false);
+      setImportRows([]);
+
+      await loadUsers();
+
+      alert(
+        `Importación completada.\n\nCreados: ${created}\nExistentes omitidos: ${skipped}`,
+      );
+    } catch (err) {
+      console.error(err);
+      alert("La importación encontró un error.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const createUser = async () => {
+    if (!newUser.employeeId || !newUser.firstName || !newUser.lastName) {
+      alert("Employee ID, nombre y apellido son obligatorios.");
+      return;
+    }
+
+    try {
+      const response = await authedFetch(`${API_URL}/inventory-people`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(newUser),
+      });
+
+      if (!response.ok) {
+        throw new Error("No se pudo crear el usuario.");
+      }
+
+      setShowCreate(false);
+
+      setNewUser({
+        employeeId: "",
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        jobTitle: "",
+        status: "ACTIVE",
+      });
+
+      await loadUsers();
+    } catch (err) {
+      console.error(err);
+      alert("No fue posible crear el usuario.");
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* =====================================================
+    HEADER
+    ===================================================== */}
+
+      <div
+        className="
+    flex
+    flex-col
+    gap-5
+    xl:flex-row
+    xl:items-start
+    xl:justify-between
+  "
+      >
+        {/* LEFT */}
+
+        <div className="flex items-center gap-4">
+          <div
+            className="
+        flex
+        h-12
+        w-12
+        shrink-0
+        items-center
+        justify-center
+        rounded-2xl
+        bg-gradient-to-br
+        from-violet-600/25
+        to-indigo-600/10
+        text-violet-300
+        ring-1
+        ring-violet-400/20
+      "
+          >
+            <UsersIcon size={23} />
+          </div>
+
+          <div>
+            <h1
+              className="
+          text-2xl
+          font-bold
+          tracking-tight
+          text-white
+        "
+            >
+              Usuarios
+            </h1>
+
+            <p className="mt-1 text-sm text-slate-400">
+              Directorio interno de empleados y asignaciones de equipos
+            </p>
+          </div>
+        </div>
+
+        {/* ACTIONS */}
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* HIDDEN FILE INPUT */}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            onChange={handleImportFile}
+            className="hidden"
+          />
+
+          {/* IMPORT */}
+
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="
+        flex
+        h-10
+        items-center
+        gap-2
+        rounded-xl
+        border
+        border-white/[0.08]
+        bg-white/[0.025]
+        px-4
+        text-sm
+        font-semibold
+        text-slate-300
+        transition
+        hover:border-white/[0.12]
+        hover:bg-white/[0.06]
+        hover:text-white
+      "
+          >
+            <Upload size={15} />
+            Importar
+          </button>
+
+          {/* EXPORT DROPDOWN */}
+
+          <div ref={exportMenuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setExportMenuOpen((current) => !current)}
+              className={`
+          flex
+          h-10
+          items-center
+          gap-2
+          rounded-xl
+          border
+          px-4
+          text-sm
+          font-semibold
+          transition
+          ${
+            exportMenuOpen
+              ? "border-violet-400/30 bg-violet-600/20 text-violet-200"
+              : "border-violet-400/20 bg-violet-600/10 text-violet-300 hover:bg-violet-600/20"
+          }
+        `}
+            >
+              <FileSpreadsheet size={15} />
+              Exportar Excel
+              <ChevronDown
+                size={14}
+                className={`
+            transition-transform
+            ${exportMenuOpen ? "rotate-180" : ""}
+          `}
+              />
+            </button>
+
+            {/* MENU */}
+
+            {exportMenuOpen && (
+              <div
+                className="
+            absolute
+            right-0
+            top-[calc(100%+8px)]
+            z-[70]
+            w-[245px]
+            overflow-hidden
+            rounded-2xl
+            border
+            border-white/[0.08]
+            bg-[#101a2d]
+            p-1.5
+            shadow-2xl
+            shadow-black/50
+          "
+              >
+                <ExportMenuButton
+                  icon={FileSpreadsheet}
+                  label="Roster completo"
+                  description="Todos los usuarios"
+                  onClick={() => exportExcel("all")}
+                />
+
+                <ExportMenuButton
+                  icon={UserCheck}
+                  label="Usuarios activos"
+                  description={`${activeUsers} usuarios`}
+                  onClick={() => exportExcel("active")}
+                />
+
+                <ExportMenuButton
+                  icon={UserX}
+                  label="Usuarios inactivos"
+                  description={`${inactiveUsers} usuarios`}
+                  onClick={() => exportExcel("inactive")}
+                />
+
+                <div className="my-1 border-t border-white/[0.06]" />
+
+                <ExportMenuButton
+                  icon={BriefcaseBusiness}
+                  label="Equipos por usuario"
+                  description="Incluye cantidad asignada"
+                  onClick={() => exportExcel("equipment")}
+                />
+
+                <ExportMenuButton
+                  icon={Building2}
+                  label="Por departamento"
+                  description="Ordenado por departamento"
+                  onClick={() => exportExcel("department")}
+                />
+
+                <div className="my-1 border-t border-white/[0.06]" />
+
+                {/* PENDING RETURNS */}
+
+                <div
+                  className="
+              flex
+              cursor-not-allowed
+              items-start
+              gap-3
+              rounded-xl
+              px-3
+              py-2.5
+              opacity-45
+            "
+                  title="Se habilitará cuando integremos devoluciones con el backend"
+                >
+                  <div
+                    className="
+                mt-0.5
+                flex
+                h-8
+                w-8
+                shrink-0
+                items-center
+                justify-center
+                rounded-lg
+                bg-amber-500/10
+                text-amber-400
+              "
+                  >
+                    <AlertTriangle size={15} />
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold text-slate-300">
+                      Equipos pendientes
+                    </p>
+
+                    <p className="mt-0.5 text-[10px] text-slate-500">
+                      Pendiente de integración
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* NEW USER */}
+
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="
+        flex
+        h-10
+        items-center
+        gap-2
+        rounded-xl
+        bg-gradient-to-r
+        from-violet-600
+        to-purple-600
+        px-4
+        text-sm
+        font-semibold
+        text-white
+        shadow-lg
+        shadow-violet-600/20
+        transition
+        hover:from-violet-500
+        hover:to-purple-500
+      "
+          >
+            <Plus size={16} />
+            Nuevo usuario
+          </button>
+        </div>
+      </div>
+
+      {/* KPI - Five live directory indicators */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <StatCard icon={UsersIcon} label="Total usuarios" value={users.length}
+          description="Registrados en el directorio" tone="blue" progress={users.length ? 100 : 0} progressLabel="Directorio" />
+        <StatCard icon={UserCheck} label="Usuarios activos" value={activeUsers}
+          description={`${activePercentage}% del total`} tone="green"
+          progress={users.length ? activeUsers / users.length * 100 : 0} progressLabel="Activos" />
+        <StatCard icon={BriefcaseBusiness} label="Con equipo vinculado" value={usersWithLinkedEquipment}
+          description="Incluye headsets por conciliar" tone="violet"
+          progress={users.length ? usersWithLinkedEquipment / users.length * 100 : 0} progressLabel="Con equipo" />
+        <StatCard icon={AlertTriangle} label="Pendientes de devolucion" value={pendingReturns}
+          description="Activos de usuarios inactivos" tone="yellow"
+          progress={users.length ? Math.min(100, pendingReturns / users.length * 100) : 0} progressLabel="Casos / usuarios" />
+        <StatCard icon={MapPin} label="Sin posicion asignada" value={usersWithoutPosition}
+          description="Sin vinculo a una posicion" tone="red"
+          progress={users.length ? usersWithoutPosition / users.length * 100 : 0} progressLabel="Sin posicion" />
+      </div>
+
+      {/* FILTER BAR */}
+
+      <div className="rounded-2xl border border-slate-400/[0.18] bg-[#17233a] p-4">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(320px,1fr)_180px_160px_180px_auto]">
+          {/* SEARCH */}
+
+          <div>
+            <label className="mb-2 block text-[11px] font-medium text-slate-500">
+              Buscar
+            </label>
+
+            <div className="relative">
+              <Search
+                size={17}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
+              />
+
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar por nombre, correo, ID empleado o cargo..."
+                className="h-11 w-full rounded-xl border border-slate-400/[0.18] bg-white/[0.025] pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-slate-400 focus:border-violet-400/40"
+              />
+            </div>
+          </div>
+
+          {/* DEPARTMENT */}
+
+          <div>
+            <label className="mb-2 block text-[11px] font-medium text-slate-500">
+              Departamento
+            </label>
+
+            <select
+              value={departmentFilter}
+              onChange={(event) => setDepartmentFilter(event.target.value)}
+              className="h-11 w-full rounded-xl border border-slate-400/[0.18] bg-[#1b2a43] px-3 text-sm text-slate-300 outline-none transition focus:border-violet-400/40"
+            >
+              <option value="ALL">Todos</option>
+
+              {departments.map((department) => (
+                <option key={department} value={department}>
+                  {department}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* STATUS */}
+
+          <div>
+            <label className="mb-2 block text-[11px] font-medium text-slate-500">
+              Estado
+            </label>
+
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="h-11 w-full rounded-xl border border-slate-400/[0.18] bg-[#1b2a43] px-3 text-sm text-slate-300 outline-none transition focus:border-violet-400/40"
+            >
+              <option value="ALL">Todos</option>
+
+              <option value="ACTIVE">Activos</option>
+
+              <option value="INACTIVE">Inactivos</option>
+            </select>
+          </div>
+
+          {/* LOCATION */}
+
+          <div>
+            <label className="mb-2 block text-[11px] font-medium text-slate-500">
+              Ubicación
+            </label>
+
+            <select
+              value={locationFilter}
+              onChange={(event) => setLocationFilter(event.target.value)}
+              className="h-11 w-full rounded-xl border border-slate-400/[0.18] bg-[#1b2a43] px-3 text-sm text-slate-300 outline-none transition focus:border-violet-400/40"
+            >
+              <option value="ALL">Todas</option>
+
+              {locations.map((location) => (
+                <option key={location} value={location}>
+                  {location}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* CLEAR */}
+
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-400/[0.18] bg-white/[0.025] px-4 text-sm font-medium text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
+            >
+              <Filter size={15} />
+              Limpiar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* TABLE */}
+
+      <div
+  className="
+    flex
+    min-h-[430px]
+    flex-col
+    overflow-hidden
+    rounded-2xl
+    border
+    border-slate-400/[0.18]
+    bg-[#17233a]
+    shadow-2xl
+    shadow-black/20
+  "
+>
+        {loading ? (
+          <div className="p-12 text-center text-sm text-slate-400">
+            Cargando información...
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center text-sm text-red-400">{error}</div>
+        ) : filteredUsers.length === 0 ? (
+          <div className="p-12 text-center">
+            <UsersIcon size={28} className="mx-auto text-slate-400" />
+
+            <p className="mt-3 text-sm font-medium text-slate-300">
+              No encontramos empleados
+            </p>
+
+            <p className="mt-1 text-xs text-slate-400">
+              Cambia los filtros o registra/importa personal.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div
+  className="
+    min-h-[330px]
+    flex-1
+    overflow-x-auto
+  "
+>
+              <table className="w-full min-w-[1180px] text-left">
+                <thead className="border-b border-white/[0.06] bg-white/[0.02]">
+                  <tr>
+                    <HeaderCell>
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={toggleAllVisibleUsers}
+                        className="h-4 w-4 cursor-pointer accent-violet-600"
+                        aria-label="Seleccionar usuarios visibles"
+                      />
+                    </HeaderCell>
+
+                    <HeaderCell>ID empleado</HeaderCell>
+
+                    <HeaderCell>Nombre</HeaderCell>
+
+                    <HeaderCell>Departamento</HeaderCell>
+
+                    <HeaderCell>Cargo</HeaderCell>
+
+                    <HeaderCell>Ubicación</HeaderCell>
+
+                    <HeaderCell>Estado</HeaderCell>
+
+                    <HeaderCell>Equipos</HeaderCell>
+
+                    <HeaderCell>Acciones</HeaderCell>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {paginatedUsers.map((user) => {
+                    const isSelected = selectedUser?.id === user.id;
+
+                    const equipmentCount = Array.isArray(user.equipment)
+                      ? user.equipment.length
+                      : 0;
+
+                    const userLocation = getUserLocation(user);
+
+                    return (
+                      <tr
+                        key={user.id}
+                        onClick={() => {
+                          setActionMenuUserId(null);
+
+                          setSelectedUser(user);
+
+                          setActiveUserTab("information");
+                        }}
+                        className={`
+                      group
+                      cursor-pointer
+                      border-b
+                      transition
+                      ${
+                        isSelected
+                          ? "border-violet-500/40 bg-violet-500/[0.07] shadow-[inset_3px_0_0_0_rgba(139,92,246,0.9)]"
+                          : "border-white/[0.04] hover:bg-violet-500/[0.025]"
+                      }
+                    `}
+                      >
+                        {/* CHECKBOX */}
+
+                        <td
+                          className="px-4 py-3"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedUsers.includes(user.id)}
+                            onChange={() => toggleUserSelection(user.id)}
+                            className="h-4 w-4 cursor-pointer accent-violet-600"
+                            aria-label={`Seleccionar ${user.firstName} ${user.lastName}`}
+                          />
+                        </td>
+
+                        {/* EMPLOYEE ID */}
+
+                        <td className="px-4 py-3">
+                          <span className="font-mono text-xs font-semibold text-violet-300">
+                            {user.employeeId}
+                          </span>
+                        </td>
+
+                        {/* PERSON */}
+
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-xs font-bold text-violet-300 ring-1 ring-violet-400/15">
+                              {user.firstName?.[0]}
+                              {user.lastName?.[0]}
+                            </div>
+
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-white">
+                                {user.firstName} {user.lastName}
+                              </p>
+
+                              <p className="mt-0.5 max-w-[210px] truncate text-xs text-slate-500">
+                                {user.email || "Sin correo"}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* DEPARTMENT */}
+
+                        <td className="px-4 py-3">
+                          <span className="inline-flex max-w-[160px] truncate rounded-lg bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-300">
+                            {user.department?.name || "Sin departamento"}
+                          </span>
+                        </td>
+
+                        {/* JOB */}
+
+                        <td className="px-4 py-3 text-sm text-slate-300">
+                          {user.jobTitle || "Sin cargo"}
+                        </td>
+
+                        {/* LOCATION */}
+
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5 text-sm text-slate-300">
+                            <MapPin
+                              size={14}
+                              className="shrink-0 text-slate-500"
+                            />
+
+                            <span className="max-w-[130px] truncate">
+                              {userLocation}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* STATUS */}
+
+                        <td className="px-4 py-3">
+                          <span
+                            className={`
+                          inline-flex
+                          rounded-full
+                          border
+                          px-2.5
+                          py-1
+                          text-[10px]
+                          font-bold
+                          uppercase
+                          tracking-wider
+                          ${
+                            user.status.toUpperCase() === "ACTIVE"
+                              ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+                              : "border-red-400/20 bg-red-400/10 text-red-300"
+                          }
+                        `}
+                          >
+                            {user.status}
+                          </span>
+                        </td>
+
+                        {/* EQUIPMENT */}
+
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2 text-sm text-slate-300">
+                            <div
+                              className="
+                            inline-flex
+                            items-center
+                            gap-1.5
+                            rounded-lg
+                            border
+                            border-white/[0.05]
+                            bg-white/[0.025]
+                            px-2
+                            py-1
+                            "
+                            >
+                              <BriefcaseBusiness
+                                size={13}
+                                className={
+                                  equipmentCount > 0
+                                    ? "text-violet-400"
+                                    : "text-slate-400"
+                                }
+                              />
+
+                              <span
+                                className={
+                                  equipmentCount > 0
+                                    ? "text-xs font-semibold text-slate-300"
+                                    : "text-xs text-slate-400"
+                                }
+                              >
+                                {equipmentCount}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* ACTIONS */}
+
+                        <td
+                          className="px-4 py-3"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openUserDetails(user)}
+                              className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.025] text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-300"
+                              title="Ver usuario"
+                            >
+                              <Eye size={15} />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => openEditUser(user)}
+                              className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.025] text-slate-400 transition hover:bg-violet-500/10 hover:text-violet-300"
+                              title="Editar usuario"
+                            >
+                              <Pencil size={15} />
+                            </button>
+
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setActionMenuUserId((current) =>
+                                    current === user.id ? null : user.id,
+                                  )
+                                }
+                                className={`
+      flex
+      h-9
+      w-9
+      items-center
+      justify-center
+      rounded-lg
+      border
+      transition
+      ${
+        actionMenuUserId === user.id
+          ? "border-violet-400/30 bg-violet-500/10 text-violet-300"
+          : "border-white/[0.06] bg-white/[0.025] text-slate-400 hover:bg-white/[0.06] hover:text-white"
+      }
+    `}
+                                title="Más acciones"
+                              >
+                                <MoreHorizontal size={16} />
+                              </button>
+
+                              {actionMenuUserId === user.id && (
+                                <div
+                                  className="
+        absolute
+        right-0
+        top-11
+        z-[80]
+        w-[210px]
+        overflow-hidden
+        rounded-xl
+        border
+        border-white/[0.08]
+        bg-[#101a2d]
+        p-1.5
+        shadow-2xl
+        shadow-black/60
+      "
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => openUserDetails(user)}
+                                    className="
+          flex
+          w-full
+          items-center
+          gap-3
+          rounded-lg
+          px-3
+          py-2.5
+          text-left
+          text-xs
+          text-slate-300
+          transition
+          hover:bg-white/[0.05]
+          hover:text-white
+        "
+                                  >
+                                    <Eye size={15} className="text-blue-400" />
+                                    Ver información
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActionMenuUserId(null);
+                                      openEditUser(user);
+                                    }}
+                                    className="
+          flex
+          w-full
+          items-center
+          gap-3
+          rounded-lg
+          px-3
+          py-2.5
+          text-left
+          text-xs
+          text-slate-300
+          transition
+          hover:bg-white/[0.05]
+          hover:text-white
+        "
+                                  >
+                                    <Pencil
+                                      size={15}
+                                      className="text-violet-400"
+                                    />
+                                    Editar usuario
+                                  </button>
+
+                                  <div className="my-1 border-t border-white/[0.06]" />
+
+                                  <button
+                                    type="button"
+                                    disabled={changingUserStatus === user.id}
+                                    onClick={() => toggleUserStatus(user)}
+                                    className={`
+          flex
+          w-full
+          items-center
+          gap-3
+          rounded-lg
+          px-3
+          py-2.5
+          text-left
+          text-xs
+          transition
+          disabled:cursor-not-allowed
+          disabled:opacity-50
+          ${
+            user.status.toUpperCase() === "ACTIVE"
+              ? "text-red-300 hover:bg-red-500/[0.08]"
+              : "text-emerald-300 hover:bg-emerald-500/[0.08]"
+          }
+        `}
+                                  >
+                                    {changingUserStatus === user.id ? (
+                                      <Loader2
+                                        size={15}
+                                        className="animate-spin"
+                                      />
+                                    ) : user.status.toUpperCase() ===
+                                      "ACTIVE" ? (
+                                      <PowerOff size={15} />
+                                    ) : (
+                                      <Power size={15} />
+                                    )}
+
+                                    {changingUserStatus === user.id
+                                      ? "Procesando..."
+                                      : user.status.toUpperCase() === "ACTIVE"
+                                        ? "Desactivar usuario"
+                                        : "Activar usuario"}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* PAGINATION */}
+
+            <div
+  className="
+    mt-auto
+    flex
+    shrink-0
+    flex-col
+    gap-4
+    border-t
+    border-white/[0.06]
+    px-5
+    py-4
+    lg:flex-row
+    lg:items-center
+    lg:justify-between
+  "
+>
+              <p className="text-xs text-slate-500">
+                Mostrando{" "}
+                <span className="font-medium text-slate-300">
+                  {firstVisibleUser}
+                </span>
+                {" - "}
+                <span className="font-medium text-slate-300">
+                  {lastVisibleUser}
+                </span>{" "}
+                de{" "}
+                <span className="font-medium text-slate-300">
+                  {filteredUsers.length}
+                </span>{" "}
+                usuarios
+              </p>
+
+              <div className="flex flex-wrap items-center gap-4">
+                {/* PAGE CONTROLS */}
+
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={safeCurrentPage <= 1}
+                    onClick={() =>
+                      setCurrentPage(Math.max(1, safeCurrentPage - 1))
+                    }
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.025] text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  {Array.from(
+                    {
+                      length: Math.min(totalPages, 5),
+                    },
+                    (_, index) => {
+                      let page = index + 1;
+
+                      if (totalPages > 5 && safeCurrentPage > 3) {
+                        page = safeCurrentPage - 2 + index;
+                      }
+
+                      if (page > totalPages) {
+                        return null;
+                      }
+
+                      return (
+                        <button
+                          key={page}
+                          type="button"
+                          onClick={() => setCurrentPage(page)}
+                          className={`
+                      flex
+                      h-9
+                      min-w-9
+                      items-center
+                      justify-center
+                      rounded-lg
+                      border
+                      px-2
+                      text-xs
+                      font-semibold
+                      transition
+                      ${
+                        safeCurrentPage === page
+                          ? "border-violet-500 bg-violet-600 text-white"
+                          : "border-white/[0.06] bg-white/[0.025] text-slate-400 hover:bg-white/[0.06] hover:text-white"
+                      }
+                    `}
+                        >
+                          {page}
+                        </button>
+                      );
+                    },
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={safeCurrentPage >= totalPages}
+                    onClick={() =>
+                      setCurrentPage(Math.min(totalPages, safeCurrentPage + 1))
+                    }
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.025] text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+
+                {/* PAGE SIZE */}
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Mostrar</span>
+
+                  <select
+                    value={pageSize}
+                    onChange={(event) =>
+                      setPageSize(Number(event.target.value))
+                    }
+                    className="h-9 rounded-lg border border-slate-400/[0.18] bg-[#1b2a43] px-3 text-xs text-slate-300 outline-none"
+                  >
+                    <option value={10}>10</option>
+
+                    <option value={25}>25</option>
+
+                    <option value={50}>50</option>
+                  </select>
+
+                  <span className="text-xs text-slate-500">por página</span>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* =====================================================
+    USER QUICK VIEW DRAWER
+    ===================================================== */}
+
+      {selectedUser && (
+        <>
+          {/* BACKDROP */}
+
+          <div
+            className="
+        fixed
+        inset-0
+        z-[90]
+        bg-black/60
+        backdrop-blur-[3px]
+      "
+            onClick={() => setSelectedUser(null)}
+          />
+
+          {/* DRAWER */}
+
+          <aside
+            className="
+        fixed
+        right-0
+        top-0
+        z-[100]
+        flex
+        h-screen
+        w-full
+        max-w-[520px]
+        flex-col
+        border-l
+        border-white/[0.08]
+        bg-[#132038]
+        shadow-2xl
+        shadow-black/70
+      "
+          >
+            {/* ===================================================
+          USER HEADER
+          =================================================== */}
+
+            <div
+              className="
+          border-b
+          border-slate-400/[0.18]
+          bg-gradient-to-b
+          from-violet-500/[0.05]
+          to-transparent
+          px-6
+          pb-5
+          pt-5
+        "
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-4">
+                  {/* AVATAR */}
+
+                  <div
+                    className="
+                flex
+                h-16
+                w-16
+                shrink-0
+                items-center
+                justify-center
+                rounded-full
+                bg-gradient-to-br
+                from-violet-500
+                to-indigo-600
+                text-lg
+                font-bold
+                text-white
+                shadow-lg
+                shadow-violet-500/20
+                ring-1
+                ring-white/10
+              "
+                  >
+                    {selectedUser.firstName?.[0]}
+                    {selectedUser.lastName?.[0]}
+                  </div>
+
+                  {/* MAIN INFO */}
+
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="truncate text-lg font-bold text-white">
+                        {selectedUser.firstName} {selectedUser.lastName}
+                      </h2>
+
+                      <span
+                        className={`
+                    inline-flex
+                    items-center
+                    gap-1
+                    rounded-full
+                    border
+                    px-2.5
+                    py-1
+                    text-[9px]
+                    font-bold
+                    uppercase
+                    tracking-wider
+                    ${
+                      selectedUser.status.toUpperCase() === "ACTIVE"
+                        ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+                        : "border-red-400/20 bg-red-400/10 text-red-300"
+                    }
+                  `}
+                      >
+                        <span
+                          className={`
+                      h-1.5
+                      w-1.5
+                      rounded-full
+                      ${
+                        selectedUser.status.toUpperCase() === "ACTIVE"
+                          ? "bg-emerald-400"
+                          : "bg-red-400"
+                      }
+                    `}
+                        />
+
+                        {selectedUser.status.toUpperCase() ===
+                        "ACTIVE"
+                         ? "Activo"
+                         : "Inactivo"}
+                      </span>
+                    </div>
+
+                    {/* EMPLOYEE / DEPARTMENT / JOB */}
+
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
+                      <span className="font-medium text-slate-300">
+                        {selectedUser.employeeId}
+                      </span>
+
+                      <span className="text-slate-700">•</span>
+
+                      <span>
+                        {selectedUser.department?.name || "Sin departamento"}
+                      </span>
+
+                      <span className="text-slate-700">•</span>
+
+                      <span>{selectedUser.jobTitle || "Sin cargo"}</span>
+                    </div>
+
+                    {/* EMAIL */}
+
+                    <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
+                      <Mail size={13} className="shrink-0 text-slate-500" />
+
+                      <span className="truncate">
+                        {selectedUser.email || "Sin correo registrado"}
+                      </span>
+                    </div>
+
+                    {/* PHONE */}
+
+                    <div className="mt-1.5 flex items-center gap-2 text-xs text-slate-400">
+                      <Phone size={13} className="shrink-0 text-slate-500" />
+
+                      <span>
+                        {selectedUser.phone || "Sin teléfono registrado"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CLOSE */}
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedUser(null)}
+                  className="
+              flex
+              h-9
+              w-9
+              shrink-0
+              items-center
+              justify-center
+              rounded-xl
+              border
+              border-white/[0.06]
+              bg-white/[0.025]
+              text-slate-500
+              transition
+              hover:bg-white/[0.06]
+              hover:text-white
+            "
+                  title="Cerrar"
+                >
+                  <X size={17} />
+                </button>
+              </div>
+            </div>
+
+            {/* ===================================================
+          TABS
+          =================================================== */}
+
+            <div
+              className="
+          flex
+          shrink-0
+          overflow-x-auto
+          border-b
+          border-slate-400/[0.18]
+          bg-[#132038]
+          px-3
+        "
+            >
+              {[
+                {
+                  id: "information",
+                  label: "Información",
+                },
+                {
+                  id: "equipment",
+                  label: "Equipos",
+                },
+                {
+                  id: "location",
+                  label: "Ubicación",
+                },
+                {
+                  id: "documents",
+                  label: "Documentos",
+                },
+                {
+                  id: "history",
+                  label: "Historial",
+                },
+              ].map((tab) => {
+                const isActive = activeUserTab === tab.id;
+
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveUserTab(tab.id as UserTab)}
+                    className={`
+                relative
+                whitespace-nowrap
+                px-3
+                py-4
+                text-[11px]
+                font-medium
+                transition
+                ${
+                  isActive
+                    ? "text-violet-300"
+                    : "text-slate-500 hover:text-slate-300"
+                }
+              `}
+                  >
+                    {tab.label}
+
+                    {isActive && (
+                      <span
+                        className="
+                    absolute
+                    bottom-0
+                    left-2
+                    right-2
+                    h-0.5
+                    rounded-full
+                    bg-violet-500
+                    shadow
+                    shadow-violet-500
+                  "
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* ===================================================
+          SCROLLABLE CONTENT
+          =================================================== */}
+
+            <div className="flex-1 overflow-y-auto">
+              {/* =================================================
+            INFORMATION TAB
+            ================================================= */}
+
+              {activeUserTab === "information" && (
+                <div className="space-y-7 p-6">
+                  {/* PERSONAL INFORMATION */}
+
+                  <section>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-white">
+                        Información personal
+                      </h3>
+
+                      <button
+                        type="button"
+                        onClick={() => openEditUser(selectedUser)}
+                        className="
+                        flex
+                        items-center
+                        gap-1.5
+                        rounded-lg
+                        border
+                        border-slate-400/[0.18]
+                        bg-white/[0.025]
+                        px-2.5
+                        py-1.5
+                        text-[11px]
+                        font-medium
+                        text-slate-400
+                        transition
+                         hover:bg-white/[0.06]
+    hover:text-white
+  "
+                      >
+                        <Pencil size={12} />
+                        Editar
+                      </button>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-5">
+                      <UserInfoItem
+                        icon={UserRound}
+                        label="Nombre completo"
+                        value={`${selectedUser.firstName} ${selectedUser.lastName}`}
+                      />
+
+                      <UserInfoItem
+                        icon={IdCard}
+                        label="ID empleado"
+                        value={selectedUser.employeeId}
+                      />
+
+                      <UserInfoItem
+                        icon={Mail}
+                        label="Correo"
+                        value={selectedUser.email || "Sin correo"}
+                      />
+
+                      <UserInfoItem
+                        icon={Phone}
+                        label="Teléfono"
+                        value={selectedUser.phone || "Sin teléfono"}
+                      />
+
+                      <UserInfoItem
+                        icon={Building2}
+                        label="Departamento"
+                        value={
+                          selectedUser.department?.name || "Sin departamento"
+                        }
+                      />
+
+                      <UserInfoItem
+                        icon={BriefcaseBusiness}
+                        label="Cargo"
+                        value={selectedUser.jobTitle || "Sin cargo"}
+                      />
+
+                      <UserInfoItem
+                        icon={MapPin}
+                        label="Ubicación"
+                        value={getUserLocation(selectedUser)}
+                      />
+
+                      <div className="flex gap-3">
+                        <div
+                          className="
+                      mt-0.5
+                      flex
+                      h-8
+                      w-8
+                      shrink-0
+                      items-center
+                      justify-center
+                      rounded-lg
+                      bg-white/[0.03]
+                      text-slate-500
+                    "
+                        >
+                          <UserCheck size={14} />
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-medium text-slate-500">
+                            Estado
+                          </p>
+
+                          <div className="mt-1 flex items-center gap-1.5">
+                            <span
+                              className={`
+                          h-2
+                          w-2
+                          rounded-full
+                          ${
+                            selectedUser.status.toUpperCase() === "ACTIVE"
+                              ? "bg-emerald-400"
+                              : "bg-red-400"
+                          }
+                        `}
+                            />
+
+                            <span
+                              className={`
+                          text-sm
+                          font-medium
+                          ${
+                            selectedUser.status.toUpperCase() === "ACTIVE"
+                              ? "text-emerald-300"
+                              : "text-red-300"
+                          }
+                        `}
+                            >
+                              {selectedUser.status.toUpperCase() ===
+                              "ACTIVE"
+                               ? "Activo"
+                               : "Inactivo"} 
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* QUICK USER ACTIONS */}
+
+<section>
+
+  <div className="grid grid-cols-2 gap-2">
+
+    <button
+      type="button"
+      onClick={() =>
+        toggleUserStatus(
+          selectedUser,
+        )
+      }
+      disabled={
+        changingUserStatus ===
+        selectedUser.id
+      }
+      className={`
+        flex
+        items-center
+        justify-center
+        gap-2
+        rounded-xl
+        border
+        px-3
+        py-2.5
+        text-xs
+        font-semibold
+        transition
+        disabled:cursor-not-allowed
+        disabled:opacity-50
+        ${
+          selectedUser.status.toUpperCase() ===
+          "ACTIVE"
+            ? "border-red-400/10 bg-red-500/[0.05] text-red-300 hover:bg-red-500/[0.1]"
+            : "border-emerald-400/10 bg-emerald-500/[0.05] text-emerald-300 hover:bg-emerald-500/[0.1]"
+        }
+      `}
+    >
+
+      {changingUserStatus ===
+      selectedUser.id ? (
+        <Loader2
+          size={14}
+          className="animate-spin"
+        />
+      ) : selectedUser.status.toUpperCase() ===
+        "ACTIVE" ? (
+        <PowerOff size={14} />
+      ) : (
+        <Power size={14} />
+      )}
+
+      {selectedUser.status.toUpperCase() ===
+      "ACTIVE"
+        ? "Desactivar"
+        : "Activar"}
+
+    </button>
+
+    <button
+  type="button"
+  onClick={() =>
+    setActiveUserTab(
+      "history",
+    )
+  }
+  className="
+    flex
+    items-center
+    justify-center
+    gap-2
+    rounded-xl
+    border
+    border-slate-400/[0.18]
+    bg-white/[0.025]
+    px-3
+    py-2.5
+    text-xs
+    font-semibold
+    text-slate-300
+    transition
+    hover:bg-white/[0.05]
+    hover:text-white
+  "
+>
+  <History size={14} />
+
+  Historial
+</button>
+
+  </div>
+
+</section>
+
+                  {/* PERSONAL EQUIPMENT */}
+
+                  <section>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-white">
+                          Equipos asignados
+                          <span className="ml-1 text-xs font-normal text-slate-500">
+                            (personal)
+                          </span>
+                        </h3>
+                      </div>
+
+                      <button
+                       type="button"
+                      onClick={() =>
+                     openAssignEquipment(
+                      selectedUser,
+                    )
+                   }
+                   className="
+                   flex
+                   items-center
+                   gap-1.5
+                   rounded-lg
+                   bg-violet-600
+                   px-2.5
+                   py-1.5
+                   text-[11px]
+                   font-semibold
+                   text-white
+                   transition
+                   hover:bg-violet-500
+                 "
+>
+                 <Plus size={12} />
+
+                   Asignar equipo
+                  </button>
+                    </div>
+
+                    <div className="mt-3 space-y-2">
+                      {(selectedUser.equipment &&
+                      selectedUser.equipment.length > 0) ||
+                      personalHeadsets.length > 0 ? (
+                        <>
+                          {selectedUser.equipment &&
+                          selectedUser.equipment.length > 0 &&
+                          selectedUser.equipment.map((equipment) => (
+                            <div
+                              key={equipment.id}
+                              className="
+            rounded-2xl
+            border
+            border-white/[0.06]
+            bg-white/[0.025]
+            p-4
+            transition
+            hover:border-violet-400/20
+            hover:bg-white/[0.035]
+          "
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex min-w-0 items-start gap-3">
+                                  <div
+                                    className="
+                  flex
+                  h-11
+                  w-11
+                  shrink-0
+                  items-center
+                  justify-center
+                  rounded-xl
+                  bg-blue-500/10
+                  text-blue-300
+                "
+                                  >
+                                    <Laptop size={19} />
+                                  </div>
+
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-slate-100">
+                                      {getEquipmentName(equipment) ||
+                                        "Equipo sin descripción"}
+                                    </p>
+
+                                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                      <span className="text-[11px] text-slate-500">
+                                        Asset:{" "}
+                                        <span className="font-medium text-slate-300">
+                                          {equipment.assetTag || "Sin Asset Tag"}
+                                        </span>
+                                      </span>
+
+                                      {equipment.serial && (
+                                        <span className="text-[11px] text-slate-500">
+                                          Serial:{" "}
+                                          <span className="font-medium text-slate-300">
+                                            {equipment.serial}
+                                          </span>
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                      {equipment.location && (
+                                        <span className="flex items-center gap-1 text-[11px] text-slate-500">
+                                          <MapPin size={11} />
+
+                                          {equipment.location}
+                                        </span>
+                                      )}
+
+                                      <span className="text-[11px] text-slate-400">
+                                        Entrada: {formatDate(equipment.entryDate)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex shrink-0 items-center gap-2">
+                                  <span
+                                    className="
+      shrink-0
+      rounded-full
+      border
+      border-emerald-400/20
+      bg-emerald-400/10
+      px-2
+      py-1
+      text-[9px]
+      font-bold
+      uppercase
+      tracking-wider
+      text-emerald-300
+    "
+                                  >
+                                    {formatEquipmentCondition(
+                                      equipment.condition,
+                                    )}
+                                  </span>
+
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      returningEquipmentId ===
+                                      equipment.id
+                                    }
+                                    onClick={() =>
+                                      returnEquipmentFromUser(
+                                        equipment,
+                                      )
+                                    }
+                                    className="
+      flex
+      h-8
+      w-8
+      shrink-0
+      items-center
+      justify-center
+      rounded-lg
+      border
+      border-red-400/10
+      bg-red-500/[0.05]
+      text-red-300
+      transition
+      hover:bg-red-500/10
+      disabled:cursor-not-allowed
+      disabled:opacity-50
+    "
+                                    title="Retirar equipo"
+                                  >
+                                    {returningEquipmentId ===
+                                    equipment.id ? (
+                                      <Loader2
+                                        size={13}
+                                        className="animate-spin"
+                                      />
+                                    ) : (
+                                      <RotateCcw size={13} />
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+
+                          {personalHeadsets.map((accessory) => (
+                            <div
+                              key={`headset-${accessory.id}`}
+                              className="
+            rounded-2xl
+            border
+            border-white/[0.06]
+            bg-white/[0.025]
+            p-4
+            transition
+            hover:border-violet-400/20
+            hover:bg-white/[0.035]
+          "
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex min-w-0 items-start gap-3">
+                                  <div
+                                    className="
+                  flex
+                  h-11
+                  w-11
+                  shrink-0
+                  items-center
+                  justify-center
+                  rounded-xl
+                  bg-violet-500/10
+                  text-violet-300
+                "
+                                  >
+                                    <PackageCheck size={18} />
+                                  </div>
+
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-slate-100">
+                                      {[accessory.role || "Headset", accessory.brand, accessory.model]
+                                        .filter(Boolean)
+                                        .join(" · ")}
+                                    </p>
+
+                                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                      <span className="text-[11px] text-slate-500">
+                                        Serial:{" "}
+                                        <span className="font-medium text-slate-300">
+                                          {accessory.serial || accessory.pcName || "No registrado"}
+                                        </span>
+                                      </span>
+                                    </div>
+
+                                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                      <span className="text-[11px] text-slate-400">
+                                        Fuente: posición asociada
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <span
+                                  className="
+      shrink-0
+      rounded-full
+      border
+      border-violet-400/20
+      bg-violet-400/10
+      px-2
+      py-1
+      text-[9px]
+      font-bold
+      uppercase
+      tracking-wider
+      text-violet-300
+    "
+                                >
+                                  Personal
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </>
+                      ) : (
+                        <EmptyUserSection
+                          icon={Laptop}
+                          title="Sin equipos personales"
+                          description="Esta persona no tiene activos personales asignados."
+                        />
+                      )}
+                    </div>
+                  </section>
+
+                  {/* POSITION EQUIPMENT */}
+
+                  <section>
+                    <h3 className="text-sm font-semibold text-white">
+                      Equipos de posición
+                      <span className="ml-1 text-xs font-normal text-slate-500">
+                        (no personales)
+                      </span>
+                    </h3>
+
+                    <div className="mt-3">
+                      {selectedUser.position ? (
+                        <div
+                          className="
+                      rounded-2xl
+                      border
+                      border-white/[0.06]
+                      bg-white/[0.025]
+                      p-4
+                    "
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="
+                          flex
+                          h-11
+                          w-11
+                          shrink-0
+                          items-center
+                          justify-center
+                          rounded-xl
+                          bg-indigo-500/10
+                          text-indigo-300
+                        "
+                            >
+                              <MapPin size={19} />
+                            </div>
+
+                            <div className="min-w-0">
+                              <p className="text-xs text-slate-500">
+                                Posición asociada
+                              </p>
+
+                              <p className="mt-1 truncate text-sm font-semibold text-slate-200">
+                                {getUserLocation(selectedUser)}
+                              </p>
+
+                              <p className="mt-1 text-xs text-slate-400">
+                                Los accesorios personales como headsets se muestran arriba en “Equipos asignados”.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <EmptyUserSection
+                          icon={MapPin}
+                          title="Sin posición asociada"
+                          description="El usuario no tiene una posición registrada actualmente."
+                        />
+                      )}
+                    </div>
+                  </section>
+
+                  {/* DOCUMENTS PREVIEW */}
+
+                  <section>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-white">
+                        Documentos
+                      </h3>
+
+                      <button
+                        type="button"
+                        onClick={() => setActiveUserTab("documents")}
+                        className="text-[11px] font-medium text-violet-300 transition hover:text-violet-200"
+                      >
+                        Ver todos
+                      </button>
+                    </div>
+
+                    <div className="mt-3">
+                      <EmptyUserSection
+                        icon={FileText}
+                        title="Sin documentos"
+                        description="Area preparada para los documentos del usuario; aun no hay almacenamiento conectado."
+                        compact
+                      />
+                    </div>
+                  </section>
+
+                  {/* RECENT HISTORY */}
+
+                  <section>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-white">
+                        Historial reciente
+                      </h3>
+
+                      <button
+                        type="button"
+                        onClick={() => setActiveUserTab("history")}
+                        className="text-[11px] font-medium text-violet-300 transition hover:text-violet-200"
+                      >
+                        Ver todo
+                      </button>
+                    </div>
+
+                    <div className="mt-3 space-y-2">
+
+  {getUserActivity(
+    selectedUser,
+  )
+    .slice(0, 3)
+    .map(
+      (activity) => (
+        <div
+          key={activity.id}
+          className="
+            flex
+            items-start
+            gap-3
+            rounded-xl
+            border
+            border-white/[0.05]
+            bg-white/[0.02]
+            px-3
+            py-3
+          "
+        >
+
+          <div
+            className="
+              mt-0.5
+              flex
+              h-8
+              w-8
+              shrink-0
+              items-center
+              justify-center
+              rounded-lg
+              bg-violet-500/10
+              text-violet-300
+            "
+          >
+            {activity.type ===
+            "EQUIPMENT" ? (
+              <Laptop
+                size={14}
+              />
+            ) : activity.type ===
+              "POSITION" ? (
+              <MapPin
+                size={14}
+              />
+            ) : activity.type ===
+              "CREATED" ? (
+              <UserCheck
+                size={14}
+              />
+            ) : (
+              <History
+                size={14}
+              />
+            )}
+          </div>
+
+          <div className="min-w-0 flex-1">
+
+            <p className="text-xs font-semibold text-slate-200">
+              {activity.title}
+            </p>
+
+            <p className="mt-1 truncate text-[11px] text-slate-500">
+              {
+                activity.description
+              }
+            </p>
+
+          </div>
+
+          <span className="shrink-0 text-[9px] text-slate-400">
+            {formatDate(
+              activity.date,
+            )}
+          </span>
+
+        </div>
+      ),
+    )}
+
+</div>
+                  </section>
+                </div>
+              )}
+
+              {/* =================================================
+            EQUIPMENT TAB
+            ================================================= */}
+
+              {activeUserTab === "equipment" && (
+                <div className="space-y-6 p-6">
+                  {/* TITLE */}
+
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-violet-400">
+                        Inventario
+                      </p>
+
+                      <h3 className="mt-1 text-base font-semibold text-white">
+                        Equipos del usuario
+                      </h3>
+
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        Activos relacionados directamente con esta persona.
+                      </p>
+                    </div>
+
+                    <button
+  type="button"
+  onClick={() =>
+    openAssignEquipment(
+      selectedUser,
+    )
+  }
+  className="
+    flex
+    shrink-0
+    items-center
+    gap-1.5
+    rounded-lg
+    bg-violet-600
+    px-3
+    py-2
+    text-[11px]
+    font-semibold
+    text-white
+    transition
+    hover:bg-violet-500
+  "
+>
+  <Plus size={12} />
+
+  Asignar
+</button>
+                  </div>
+
+                  {/* EQUIPMENT COUNT */}
+
+                  <div
+                    className="
+        grid
+        grid-cols-2
+        gap-3
+      "
+                  >
+                    <div
+                      className="
+          rounded-xl
+          border
+          border-white/[0.06]
+          bg-white/[0.025]
+          p-4
+        "
+                    >
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500">
+                        Total asignados
+                      </p>
+
+                      <p className="mt-1 text-2xl font-bold text-white">
+                        {selectedUser.equipment?.length ?? 0}
+                      </p>
+                    </div>
+
+                    <div
+                      className="
+          rounded-xl
+          border
+          border-white/[0.06]
+          bg-white/[0.025]
+          p-4
+        "
+                    >
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500">
+                        Posición
+                      </p>
+
+                      <p className="mt-1 truncate text-sm font-semibold text-white">
+                        {selectedUser.position?.code || "Sin posición"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* EQUIPMENT LIST */}
+
+                  {selectedUser.equipment &&
+                  selectedUser.equipment.length > 0 ? (
+                    <div className="space-y-3">
+                      {selectedUser.equipment.map((equipment) => (
+                        <div
+                          key={equipment.id}
+                          className="
+                overflow-hidden
+                rounded-2xl
+                border
+                border-white/[0.06]
+                bg-white/[0.025]
+              "
+                        >
+                          {/* EQUIPMENT HEADER */}
+
+                          <div className="flex items-start justify-between gap-3 p-4">
+                            <div className="flex min-w-0 items-start gap-3">
+                              <div
+                                className="
+                      flex
+                      h-12
+                      w-12
+                      shrink-0
+                      items-center
+                      justify-center
+                      rounded-xl
+                      bg-blue-500/10
+                      text-blue-300
+                    "
+                              >
+                                <Laptop size={20} />
+                              </div>
+
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-white">
+                                  {getEquipmentName(equipment) ||
+                                    "Equipo sin descripción"}
+                                </p>
+
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {equipment.assetTag ||
+                                    equipment.serial ||
+                                    "Sin identificador"}
+                                </p>
+                              </div>
+                            </div>
+
+                            <span
+                              className={`
+                    shrink-0
+                    rounded-full
+                    border
+                    px-2
+                    py-1
+                    text-[9px]
+                    font-bold
+                    uppercase
+                    tracking-wider
+                    ${
+                      equipment.status.toUpperCase() === "ACTIVE"
+                        ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+                        : "border-amber-400/20 bg-amber-400/10 text-amber-300"
+                    }
+                  `}
+                            >
+                              {formatEquipmentStatus(equipment.status)}
+                            </span>
+                          </div>
+
+                          {/* DETAILS */}
+
+                          <div
+                            className="
+                  grid
+                  grid-cols-2
+                  gap-x-4
+                  gap-y-4
+                  border-t
+                  border-white/[0.05]
+                  bg-black/10
+                  px-4
+                  py-4
+                "
+                          >
+                            <EquipmentInfoItem
+                              label="Categoría"
+                              value={equipment.category || "Sin categoría"}
+                            />
+
+                            <EquipmentInfoItem
+                              label="Marca"
+                              value={equipment.brand || "Sin marca"}
+                            />
+
+                            <EquipmentInfoItem
+                              label="Modelo"
+                              value={equipment.model || "Sin modelo"}
+                            />
+
+                            <EquipmentInfoItem
+                              label="Asset Tag"
+                              value={equipment.assetTag || "Sin Asset Tag"}
+                            />
+
+                            <EquipmentInfoItem
+                              label="Serial"
+                              value={equipment.serial || "Sin serial"}
+                            />
+
+                            <EquipmentInfoItem
+                              label="Condición"
+                              value={formatEquipmentCondition(
+                                equipment.condition,
+                              )}
+                            />
+
+                            <EquipmentInfoItem
+                              label="Ubicación"
+                              value={equipment.location || "Sin ubicación"}
+                            />
+
+                            <EquipmentInfoItem
+                              label="Fecha de entrada"
+                              value={formatDate(equipment.entryDate)}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyUserSection
+                      icon={Laptop}
+                      title="Sin equipos asignados"
+                      description="Este usuario no tiene equipos personales relacionados."
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* =================================================
+            LOCATION TAB
+            ================================================= */}
+
+              {activeUserTab === "location" && (
+                <div className="space-y-6 p-6">
+                  {/* HEADER */}
+
+                  <div className="flex items-start justify-between gap-4">
+
+  <div>
+
+    <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-violet-400">
+      Ubicación
+    </p>
+
+    <h3 className="mt-1 text-base font-semibold text-white">
+      Posición del usuario
+    </h3>
+
+    <p className="mt-1 text-xs leading-5 text-slate-500">
+      Información relacionada con la posición actualmente asociada.
+    </p>
+
+  </div>
+
+  <button
+    type="button"
+    onClick={() =>
+      openAssignPosition(
+        selectedUser,
+      )
+    }
+    className="
+      flex
+      shrink-0
+      items-center
+      gap-1.5
+      rounded-lg
+      border
+      border-violet-400/20
+      bg-violet-500/10
+      px-3
+      py-2
+      text-[11px]
+      font-semibold
+      text-violet-300
+      transition
+      hover:bg-violet-500/20
+    "
+  >
+    <RefreshCcw size={13} />
+
+    {selectedUser.position
+      ? "Cambiar"
+      : "Asignar"}
+  </button>
+
+</div>
+
+                  {selectedUser.position ? (
+                    <div
+                      className="
+          overflow-hidden
+          rounded-2xl
+          border
+          border-white/[0.06]
+          bg-white/[0.025]
+        "
+                    >
+                      {/* POSITION HEADER */}
+
+                      <div className="flex items-center gap-4 p-5">
+                        <div
+                          className="
+              flex
+              h-12
+              w-12
+              shrink-0
+              items-center
+              justify-center
+              rounded-xl
+              bg-violet-500/10
+              text-violet-300
+            "
+                        >
+                          <MapPin size={21} />
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="text-xs text-slate-500">
+                            Posición actual
+                          </p>
+
+                          <p className="mt-1 truncate text-sm font-semibold text-white">
+                            {selectedUser.position.code}
+                          </p>
+
+                          <p className="mt-1 text-xs text-violet-300">
+                            {selectedUser.position.code}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* POSITION INFO */}
+
+                      <div
+                        className="
+            grid
+            grid-cols-2
+            gap-x-5
+            gap-y-5
+            border-t
+            border-white/[0.05]
+            bg-black/10
+            p-5
+          "
+                      >
+                        <EquipmentInfoItem
+                          label="Código"
+                          value={selectedUser.position.code}
+                        />
+
+                        <EquipmentInfoItem
+                          label="Nombre"
+                          value={selectedUser.position.name || selectedUser.position.code}
+                        />
+
+                        <EquipmentInfoItem
+                          label="Ala"
+                          value={selectedUser.position.wing || "Sin ala"}
+                        />
+
+                        <EquipmentInfoItem
+                          label="Estado"
+                          value={selectedUser.position.status || "Sin estado"}
+                        />
+
+                        <EquipmentInfoItem
+                          label="Celda usuario"
+                          value={selectedUser.position.userCell || "Sin dato"}
+                        />
+
+                        <EquipmentInfoItem
+                          label="Celda equipos"
+                          value={
+                            selectedUser.position.equipmentCell || "Sin dato"
+                          }
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <EmptyUserSection
+                      icon={MapPin}
+                      title="Sin posición asociada"
+                      description="Actualmente este usuario no tiene una posición registrada."
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* =================================================
+            DOCUMENTS TAB
+            ================================================= */}
+
+              {activeUserTab ===
+  "documents" && (
+  <div className="space-y-6 p-6">
+
+    {/* HEADER */}
+
+    <div>
+
+      <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-violet-400">
+        Documentación
+      </p>
+
+      <h3 className="mt-1 text-base font-semibold text-white">
+        Documentos del usuario
+      </h3>
+
+      <p className="mt-1 text-xs leading-5 text-slate-500">
+        Actas, entregas, devoluciones y documentación relacionada.
+      </p>
+
+    </div>
+
+    {/* DOCUMENT STATUS */}
+
+    <div
+      className="
+        rounded-2xl
+        border
+        border-dashed
+        border-white/[0.08]
+        bg-white/[0.015]
+        px-5
+        py-10
+        text-center
+      "
+    >
+
+      <div
+        className="
+          mx-auto
+          flex
+          h-12
+          w-12
+          items-center
+          justify-center
+          rounded-xl
+          bg-blue-500/10
+          text-blue-300
+        "
+      >
+        <FileCheck2
+          size={21}
+        />
+      </div>
+
+      <h4 className="mt-4 text-sm font-semibold text-white">
+        Sin documentos registrados
+      </h4>
+
+      <p className="mx-auto mt-2 max-w-[320px] text-xs leading-5 text-slate-500">
+        Espacio preparado para actas de entrega, devoluciones y archivos del empleado. La carga estara disponible al conectar almacenamiento seguro y permisos.
+      </p>
+
+    </div>
+
+    {/* FUTURE TYPES */}
+
+    <div>
+
+      <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+        Tipos previstos
+      </p>
+
+      <div className="grid grid-cols-2 gap-2">
+
+        <DocumentTypeCard
+          icon={ClipboardList}
+          title="Acta de entrega"
+        />
+
+        <DocumentTypeCard
+          icon={RotateCcw}
+          title="Acta de devolución"
+        />
+
+        <DocumentTypeCard
+          icon={FileText}
+          title="Otros documentos"
+        />
+
+        <DocumentTypeCard
+          icon={History}
+          title="Evidencias"
+        />
+
+      </div>
+
+    </div>
+
+  </div>
+)}
+
+              {/* =================================================
+            HISTORY TAB
+            ================================================= */}
+
+              {activeUserTab ===
+  "history" && (
+  <div className="space-y-6 p-6">
+
+    {/* HEADER */}
+
+    <div>
+
+      <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-violet-400">
+        Trazabilidad
+      </p>
+
+      <h3 className="mt-1 text-base font-semibold text-white">
+        Historial del usuario
+      </h3>
+
+      <p className="mt-1 text-xs leading-5 text-slate-500">
+        Actividad disponible actualmente para esta persona.
+      </p>
+
+    </div>
+
+    {/* SUMMARY */}
+
+    <div className="grid grid-cols-2 gap-3">
+
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
+
+        <p className="text-[10px] uppercase tracking-wider text-slate-500">
+          Actividades
+        </p>
+
+        <p className="mt-1 text-2xl font-bold text-white">
+          {
+            getUserActivity(
+              selectedUser,
+            ).length
+          }
+        </p>
+
+      </div>
+
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
+
+        <p className="text-[10px] uppercase tracking-wider text-slate-500">
+          Último cambio
+        </p>
+
+        <p className="mt-2 text-xs font-semibold text-white">
+          {formatDate(
+            selectedUser.updatedAt,
+          )}
+        </p>
+
+      </div>
+
+    </div>
+
+    {/* TIMELINE */}
+
+    <div className="space-y-3">
+
+      {getUserActivity(
+        selectedUser,
+      ).map(
+        (
+          activity,
+          index,
+        ) => (
+          <div
+            key={activity.id}
+            className="
+              relative
+              flex
+              gap-4
+              rounded-2xl
+              border
+              border-white/[0.06]
+              bg-white/[0.025]
+              p-4
+            "
+          >
+
+            {/* ICON */}
+
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
+
+              {activity.type ===
+              "EQUIPMENT" ? (
+                <Laptop
+                  size={17}
+                />
+              ) : activity.type ===
+                "POSITION" ? (
+                <MapPin
+                  size={17}
+                />
+              ) : activity.type ===
+                "CREATED" ? (
+                <UserCheck
+                  size={17}
+                />
+              ) : (
+                <History
+                  size={17}
+                />
+              )}
+
+            </div>
+
+            {/* DATA */}
+
+            <div className="min-w-0 flex-1">
+
+              <div className="flex items-start justify-between gap-3">
+
+                <p className="text-sm font-semibold text-white">
+                  {
+                    activity.title
+                  }
+                </p>
+
+                <span className="shrink-0 text-[10px] text-slate-500">
+                  {formatDateTime(
+                    activity.date,
+                  )}
+                </span>
+
+              </div>
+
+              <p className="mt-2 text-xs leading-5 text-slate-400">
+                {
+                  activity.description
+                }
+              </p>
+
+            </div>
+
+          </div>
+        ),
+      )}
+
+    </div>
+
+    <div className="rounded-xl border border-blue-400/10 bg-blue-500/[0.04] px-4 py-3">
+
+      <p className="text-[11px] leading-5 text-slate-500">
+        Este historial usa los datos actualmente disponibles en Usuarios.
+        Cuando conectemos el historial completo del backend, aquí también
+        aparecerán movimientos anteriores, devoluciones y cambios históricos.
+      </p>
+
+    </div>
+
+  </div>
+)}
+            </div>
+
+            {/* ===================================================
+          FOOTER
+      =================================================== */}
+
+            <div
+              className="
+          shrink-0
+          border-t
+          border-slate-400/[0.18]
+          bg-[#132038]
+          p-5
+        "
+            >
+              <button
+  type="button"
+  onClick={() =>
+    setActiveUserTab(
+      "information",
+    )
+  }
+  className="
+    flex
+    w-full
+    items-center
+    justify-center
+    gap-2
+    rounded-xl
+    border
+    border-slate-400/[0.18]
+    bg-white/[0.025]
+    px-4
+    py-3
+    text-xs
+    font-semibold
+    text-slate-300
+    transition
+    hover:bg-white/[0.05]
+    hover:text-white
+  "
+>
+  <UserRound size={15} />
+
+  Vista general del usuario
+</button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedUser(null)}
+                className="
+            mt-2
+            w-full
+            rounded-xl
+            px-4
+            py-2.5
+            text-sm
+            font-medium
+            text-slate-500
+            transition
+            hover:bg-white/[0.04]
+            hover:text-white
+          "
+              >
+                Cerrar
+              </button>
+            </div>
+          </aside>
+        </>
+      )}
+
+      {/* =====================================================
+    ASSIGN EQUIPMENT MODAL
+    ===================================================== */}
+
+{showAssignEquipment &&
+  selectedUser && (
+  <Modal
+    title="Asignar equipo"
+    onClose={() => {
+      if (!savingAssignment) {
+        setShowAssignEquipment(
+          false,
+        );
+
+        setSelectedEquipmentId(
+          "",
+        );
+
+        setEquipmentSearch("");
+      }
+    }}
+  >
+
+    <div className="space-y-5">
+
+      {/* USER */}
+
+      <div className="rounded-xl border border-violet-400/10 bg-violet-500/[0.05] p-4">
+
+        <p className="text-xs text-slate-500">
+          Asignar a
+        </p>
+
+        <p className="mt-1 text-sm font-semibold text-white">
+          {selectedUser.firstName}{" "}
+          {selectedUser.lastName}
+        </p>
+
+        <p className="mt-1 text-xs text-violet-300">
+          {selectedUser.employeeId}
+        </p>
+
+      </div>
+
+      {/* SEARCH */}
+
+      <div>
+
+        <label className="mb-2 block text-xs font-medium text-slate-400">
+          Buscar equipo disponible
+        </label>
+
+        <div className="relative">
+
+          <Search
+            size={15}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+          />
+
+          <input
+            value={equipmentSearch}
+            onChange={(event) =>
+              setEquipmentSearch(
+                event.target.value,
+              )
+            }
+            placeholder="Asset Tag, serial, marca, modelo..."
+            className="h-11 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] pl-9 pr-3 text-sm text-white outline-none focus:border-violet-400/40"
+          />
+
+        </div>
+
+      </div>
+
+      {/* EQUIPMENT */}
+
+      <div className="max-h-[360px] space-y-2 overflow-y-auto">
+
+        {loadingAssignmentData ? (
+
+          <div className="py-10 text-center text-sm text-slate-500">
+
+            <Loader2
+              size={20}
+              className="mx-auto animate-spin"
+            />
+
+            <p className="mt-2">
+              Cargando equipos...
+            </p>
+
+          </div>
+
+        ) : availableEquipment.length ===
+          0 ? (
+
+          <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-8 text-center">
+
+            <PackageCheck
+              size={24}
+              className="mx-auto text-slate-400"
+            />
+
+            <p className="mt-2 text-sm text-slate-400">
+              No hay equipos disponibles
+            </p>
+
+          </div>
+
+        ) : (
+
+          availableEquipment.map(
+            (equipment) => {
+
+              const selected =
+                selectedEquipmentId ===
+                equipment.id;
+
+              return (
+                <button
+                  key={equipment.id}
+                  type="button"
+                  onClick={() =>
+                    setSelectedEquipmentId(
+                      equipment.id,
+                    )
+                  }
+                  className={`
+                    flex
+                    w-full
+                    items-center
+                    justify-between
+                    gap-3
+                    rounded-xl
+                    border
+                    p-3
+                    text-left
+                    transition
+                    ${
+                      selected
+                        ? "border-violet-500/40 bg-violet-500/10"
+                        : "border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04]"
+                    }
+                  `}
+                >
+
+                  <div className="flex min-w-0 items-center gap-3">
+
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-300">
+                      <Laptop size={17} />
+                    </div>
+
+                    <div className="min-w-0">
+
+                      <p className="truncate text-sm font-semibold text-white">
+                        {getEquipmentName(
+                          equipment,
+                        ) ||
+                          "Equipo"}
+                      </p>
+
+                      <p className="mt-1 truncate text-xs text-slate-500">
+                        {equipment.assetTag ||
+                          equipment.serial ||
+                          "Sin identificador"}
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                  {selected && (
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white">
+                      <Check size={14} />
+                    </div>
+                  )}
+
+                </button>
+              );
+            },
+          )
+
+        )}
+
+      </div>
+
+      {/* ACTIONS */}
+
+      <div className="flex justify-end gap-2 border-t border-white/[0.06] pt-4">
+
+        <button
+          type="button"
+          disabled={savingAssignment}
+          onClick={() =>
+            setShowAssignEquipment(
+              false,
+            )
+          }
+          className="rounded-xl border border-white/[0.08] px-4 py-2.5 text-sm text-slate-300"
+        >
+          Cancelar
+        </button>
+
+        <button
+          type="button"
+          disabled={
+            savingAssignment ||
+            !selectedEquipmentId
+          }
+          onClick={
+            assignEquipmentToUser
+          }
+          className="flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-40"
+        >
+
+          {savingAssignment ? (
+            <Loader2
+              size={15}
+              className="animate-spin"
+            />
+          ) : (
+            <PackageCheck
+              size={15}
+            />
+          )}
+
+          {savingAssignment
+            ? "Asignando..."
+            : "Asignar equipo"}
+
+        </button>
+
+      </div>
+
+    </div>
+
+  </Modal>
+)}
+{/* =====================================================
+    ASSIGN POSITION MODAL
+    ===================================================== */}
+
+{showAssignPosition &&
+  selectedUser && (
+  <Modal
+    title="Asignar posición"
+    onClose={() => {
+      if (!savingAssignment) {
+        setShowAssignPosition(
+          false,
+        );
+      }
+    }}
+  >
+
+    <div className="space-y-5">
+
+      <div className="rounded-xl border border-violet-400/10 bg-violet-500/[0.05] p-4">
+
+        <p className="text-xs text-slate-500">
+          Usuario
+        </p>
+
+        <p className="mt-1 text-sm font-semibold text-white">
+          {selectedUser.firstName}{" "}
+          {selectedUser.lastName}
+        </p>
+
+      </div>
+
+      <label className="block space-y-2">
+
+        <span className="text-xs font-medium text-slate-400">
+          Posición
+        </span>
+
+        <select
+          value={selectedPositionId}
+          onChange={(event) =>
+            setSelectedPositionId(
+              event.target.value,
+            )
+          }
+          className="h-11 w-full rounded-xl border border-white/[0.08] bg-[#1b2a43] px-3 text-sm text-white outline-none focus:border-violet-400/40"
+        >
+
+          <option value="">
+            Sin posición
+          </option>
+
+          {availablePositions.map(
+            (position) => (
+              <option
+                key={position.id}
+                value={position.id}
+              >
+                {position.code}
+                {" - "}
+                {position.name ||
+                  "Sin nombre"}
+                {position.area?.name
+                  ? ` - ${position.area.name}`
+                  : ""}
+              </option>
+            ),
+          )}
+
+        </select>
+
+      </label>
+
+      {selectedUser.position && (
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
+
+          <p className="text-xs text-slate-500">
+            Posición actual
+          </p>
+
+          <p className="mt-1 text-sm font-semibold text-white">
+            {selectedUser.position.code}
+          </p>
+
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2">
+
+        <button
+          type="button"
+          disabled={savingAssignment}
+          onClick={() =>
+            setShowAssignPosition(
+              false,
+            )
+          }
+          className="rounded-xl border border-white/[0.08] px-4 py-2.5 text-sm text-slate-300"
+        >
+          Cancelar
+        </button>
+
+        <button
+          type="button"
+          disabled={savingAssignment}
+          onClick={
+            assignPositionToUser
+          }
+          className="flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+        >
+
+          {savingAssignment ? (
+            <Loader2
+              size={15}
+              className="animate-spin"
+            />
+          ) : (
+            <MapPin size={15} />
+          )}
+
+          Guardar posición
+
+        </button>
+
+      </div>
+
+    </div>
+
+  </Modal>
+)}
+      {/* =====================================================
+    EDIT USER MODAL
+    ===================================================== */}
+
+      {showEdit && editingUser && (
+        <Modal title="Editar usuario" onClose={closeEditUser}>
+          <div className="space-y-6">
+            {/* USER SUMMARY */}
+
+            <div
+              className="
+          flex
+          items-center
+          gap-4
+          rounded-2xl
+          border
+          border-violet-400/10
+          bg-violet-500/[0.05]
+          p-4
+        "
+            >
+              <div
+                className="
+            flex
+            h-12
+            w-12
+            shrink-0
+            items-center
+            justify-center
+            rounded-full
+            bg-gradient-to-br
+            from-violet-500
+            to-indigo-600
+            text-sm
+            font-bold
+            text-white
+          "
+              >
+                {editingUser.firstName?.[0]}
+                {editingUser.lastName?.[0]}
+              </div>
+
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-white">
+                  {editingUser.firstName} {editingUser.lastName}
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  {editingUser.employeeId}
+                </p>
+              </div>
+            </div>
+
+            {/* FORM */}
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field
+                label="Employee ID *"
+                value={editUser.employeeId}
+                onChange={(value) =>
+                  setEditUser((current) => ({
+                    ...current,
+                    employeeId: value,
+                  }))
+                }
+              />
+
+              <Field
+                label="Nombre *"
+                value={editUser.firstName}
+                onChange={(value) =>
+                  setEditUser((current) => ({
+                    ...current,
+                    firstName: value,
+                  }))
+                }
+              />
+
+              <Field
+                label="Apellido *"
+                value={editUser.lastName}
+                onChange={(value) =>
+                  setEditUser((current) => ({
+                    ...current,
+                    lastName: value,
+                  }))
+                }
+              />
+
+              <Field
+                label="Correo"
+                value={editUser.email}
+                onChange={(value) =>
+                  setEditUser((current) => ({
+                    ...current,
+                    email: value,
+                  }))
+                }
+              />
+
+              <Field
+                label="Teléfono"
+                value={editUser.phone}
+                onChange={(value) =>
+                  setEditUser((current) => ({
+                    ...current,
+                    phone: value,
+                  }))
+                }
+              />
+              <label className="space-y-2">
+                <span className="text-xs font-medium text-slate-400">Cargo</span>
+                <select value={editUser.jobTitle} onChange={(event) => setEditUser((current) => ({ ...current, jobTitle: event.target.value }))} className="h-11 w-full rounded-xl border border-white/[0.08] bg-[#1b2a43] px-3 text-sm text-white outline-none focus:border-violet-400/40">
+                  <option value="">Sin cargo</option>
+                  {editUser.jobTitle && !USER_JOB_TITLES.includes(editUser.jobTitle) && <option value={editUser.jobTitle}>{editUser.jobTitle} (actual)</option>}
+                  {USER_JOB_TITLES.map((title) => <option key={title} value={title}>{title}</option>)}
+                </select>
+              </label>
+            </div>
+
+            {/* DEPARTMENT + STATUS */}
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {/* DEPARTMENT */}
+
+              <label className="space-y-2">
+                <span className="text-xs font-medium text-slate-400">
+                  Departamento
+                </span>
+
+                <select
+                  value={editUser.departmentId}
+                  onChange={(event) =>
+                    setEditUser((current) => ({
+                      ...current,
+                      departmentId: event.target.value,
+                    }))
+                  }
+                  className="
+              h-11
+              w-full
+              rounded-xl
+              border
+              border-white/[0.08]
+              bg-[#1b2a43]
+              px-3
+              text-sm
+              text-white
+              outline-none
+              transition
+              focus:border-violet-400/40
+            "
+                >
+                  <option value="">Sin departamento</option>
+
+                  {departmentOptions.map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {/* STATUS */}
+
+              <label className="space-y-2">
+                <span className="text-xs font-medium text-slate-400">
+                  Estado
+                </span>
+
+                <select
+                  value={editUser.status}
+                  onChange={(event) =>
+                    setEditUser((current) => ({
+                      ...current,
+                      status: event.target.value,
+                    }))
+                  }
+                  className="
+              h-11
+              w-full
+              rounded-xl
+              border
+              border-white/[0.08]
+              bg-[#1b2a43]
+              px-3
+              text-sm
+              text-white
+              outline-none
+              transition
+              focus:border-violet-400/40
+            "
+                >
+                  <option value="ACTIVE">Activo</option>
+
+                  <option value="INACTIVE">Inactivo</option>
+                </select>
+              </label>
+            </div>
+
+            {/* INFO */}
+
+            <div
+              className="
+          rounded-xl
+          border
+          border-blue-400/10
+          bg-blue-500/[0.05]
+          px-4
+          py-3
+        "
+            >
+              <p className="text-xs leading-5 text-slate-400">
+                Los cambios se guardarán directamente en el inventario. Los
+                equipos y la posición del usuario no serán modificados desde
+                este formulario.
+              </p>
+            </div>
+
+            {/* ACTIONS */}
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={savingEdit}
+                onClick={closeEditUser}
+                className="
+            rounded-xl
+            border
+            border-white/[0.08]
+            px-4
+            py-2.5
+            text-sm
+            font-medium
+            text-slate-300
+            transition
+            hover:bg-white/[0.04]
+            disabled:cursor-not-allowed
+            disabled:opacity-50
+          "
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                disabled={savingEdit}
+                onClick={saveEditedUser}
+                className="
+            flex
+            min-w-[150px]
+            items-center
+            justify-center
+            gap-2
+            rounded-xl
+            bg-violet-600
+            px-5
+            py-2.5
+            text-sm
+            font-semibold
+            text-white
+            transition
+            hover:bg-violet-500
+            disabled:cursor-not-allowed
+            disabled:opacity-60
+          "
+              >
+                {savingEdit ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <Save size={16} />
+                    Guardar cambios
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {showImport && (
+        <Modal
+          title="Revisar importación"
+          onClose={() => {
+            if (!importing) {
+              setShowImport(false);
+              setImportRows([]);
+            }
+          }}
+        >
+          <div className="space-y-5">
+            <div className="rounded-xl border border-violet-400/15 bg-violet-500/10 p-4">
+              <p className="text-sm font-semibold text-violet-200">
+                Vista previa
+              </p>
+
+              <p className="mt-1 text-xs text-slate-400">
+                Se encontraron {importRows.length} registros válidos. Los
+                empleados existentes no serán duplicados.
+              </p>
+            </div>
+
+            <div className="max-h-[360px] overflow-auto rounded-xl border border-white/[0.06]">
+              <table className="w-full text-left text-xs">
+                <thead className="sticky top-0 bg-[#253551]">
+                  <tr>
+                    <HeaderCell>Employee ID</HeaderCell>
+
+                    <HeaderCell>Nombre</HeaderCell>
+
+                    <HeaderCell>Correo</HeaderCell>
+
+                    <HeaderCell>Cargo</HeaderCell>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {importRows.map((row, index) => (
+                    <tr
+                      key={`${row.employeeId}-${index}`}
+                      className="border-b border-white/[0.04]"
+                    >
+                      <td className="px-4 py-3 text-violet-300">
+                        {row.employeeId}
+                      </td>
+
+                      <td className="px-4 py-3 text-white">
+                        {row.firstName} {row.lastName}
+                      </td>
+
+                      <td className="px-4 py-3 text-slate-400">
+                        {row.email || "—"}
+                      </td>
+
+                      <td className="px-4 py-3 text-slate-400">
+                        {row.jobTitle || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={importing}
+                onClick={() => {
+                  setShowImport(false);
+                  setImportRows([]);
+                }}
+                className="rounded-xl border border-white/[0.08] px-4 py-2.5 text-sm text-slate-300"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                disabled={importing || importRows.length === 0}
+                onClick={confirmImport}
+                className="flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+              >
+                <FileSpreadsheet size={16} />
+
+                {importing ? "Importando..." : "Confirmar importación"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* CREATE MODAL */}
+
+      {showCreate && (
+        <Modal title="Nuevo usuario" onClose={() => setShowCreate(false)}>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field
+              label="Employee ID *"
+              value={newUser.employeeId}
+              onChange={(value) =>
+                setNewUser({
+                  ...newUser,
+                  employeeId: value,
+                })
+              }
+            />
+
+            <Field
+              label="Nombre *"
+              value={editUser.firstName}
+              onChange={(value) =>
+                setEditUser((current) => ({
+                  ...current,
+                  firstName: value,
+                }))
+              }
+            />
+
+            <Field
+              label="Apellido *"
+              value={newUser.lastName}
+              onChange={(value) =>
+                setNewUser({
+                  ...newUser,
+                  lastName: value,
+                })
+              }
+            />
+
+            <Field
+              label="Correo"
+              value={newUser.email}
+              onChange={(value) =>
+                setNewUser({
+                  ...newUser,
+                  email: value,
+                })
+              }
+            />
+
+            <Field
+              label="Teléfono"
+              value={newUser.phone}
+              onChange={(value) =>
+                setNewUser({
+                  ...newUser,
+                  phone: value,
+                })
+              }
+            />
+              <label className="space-y-2">
+                <span className="text-xs font-medium text-slate-400">Cargo</span>
+                <select value={newUser.jobTitle} onChange={(event) => setNewUser((current) => ({ ...current, jobTitle: event.target.value }))} className="h-11 w-full rounded-xl border border-white/[0.08] bg-[#1b2a43] px-3 text-sm text-white outline-none focus:border-violet-400/40">
+                  <option value="">Sin cargo</option>
+                  {newUser.jobTitle && !USER_JOB_TITLES.includes(newUser.jobTitle) && <option value={newUser.jobTitle}>{newUser.jobTitle} (actual)</option>}
+                  {USER_JOB_TITLES.map((title) => <option key={title} value={title}>{title}</option>)}
+                </select>
+              </label>
+          </div>
+
+          <div className="mt-6 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowCreate(false)}
+              className="rounded-xl border border-white/[0.08] px-4 py-2.5 text-sm text-slate-300"
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="button"
+              onClick={createUser}
+              className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-500"
+            >
+              Crear usuario
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function ExportMenuButton({
+  icon: Icon,
+  label,
+  description,
+  onClick,
+}: {
+  icon: React.ComponentType<{
+    size?: number;
+    className?: string;
+  }>;
+  label: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="
+        flex
+        w-full
+        items-start
+        gap-3
+        rounded-xl
+        px-3
+        py-2.5
+        text-left
+        transition
+        hover:bg-white/[0.05]
+      "
+    >
+      <div
+        className="
+          mt-0.5
+          flex
+          h-8
+          w-8
+          shrink-0
+          items-center
+          justify-center
+          rounded-lg
+          bg-emerald-500/10
+          text-emerald-400
+        "
+      >
+        <Icon size={15} />
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-slate-200">{label}</p>
+
+        <p className="mt-0.5 truncate text-[10px] text-slate-500">
+          {description}
+        </p>
+      </div>
+    </button>
+  );
+}
+
+function UserInfoItem({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{
+    size?: number;
+    className?: string;
+  }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex min-w-0 gap-3">
+      <div
+        className="
+          mt-0.5
+          flex
+          h-8
+          w-8
+          shrink-0
+          items-center
+          justify-center
+          rounded-lg
+          bg-white/[0.03]
+          text-slate-500
+        "
+      >
+        <Icon size={14} />
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-[10px] font-medium text-slate-500">{label}</p>
+
+        <p className="mt-1 break-words text-sm font-medium leading-5 text-slate-200">
+          {value}
+        </p>
+      </div>
+    </div>
+  );
+}
+function EmptyUserSection({
+  icon: Icon,
+  title,
+  description,
+  compact = false,
+}: {
+  icon: React.ComponentType<{
+    size?: number;
+    className?: string;
+  }>;
+  title: string;
+  description: string;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`
+        rounded-2xl
+        border
+        border-dashed
+        border-slate-400/[0.18]
+        bg-white/[0.015]
+        text-center
+        ${compact ? "px-4 py-5" : "px-5 py-8"}
+      `}
+    >
+      <div
+        className="
+          mx-auto
+          flex
+          h-10
+          w-10
+          items-center
+          justify-center
+          rounded-xl
+          bg-white/[0.03]
+          text-slate-400
+        "
+      >
+        <Icon size={17} />
+      </div>
+
+      <p className="mt-3 text-sm font-medium text-slate-300">{title}</p>
+
+      <p className="mx-auto mt-1 max-w-[320px] text-xs leading-5 text-slate-400">
+        {description}
+      </p>
+    </div>
+  );
+}
+function EquipmentInfoItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[9px] font-medium uppercase tracking-wider text-slate-400">
+        {label}
+      </p>
+
+      <p className="mt-1 truncate text-xs font-medium text-slate-300">
+        {value}
+      </p>
+    </div>
+  );
+}
+function DocumentTypeCard({
+  icon: Icon,
+  title,
+}: {
+  icon: React.ElementType;
+  title: string;
+}) {
+  return (
+    <div
+      className="
+        flex
+        items-center
+        gap-3
+        rounded-xl
+        border
+        border-white/[0.05]
+        bg-white/[0.02]
+        p-3
+      "
+    >
+
+      <div
+        className="
+          flex
+          h-9
+          w-9
+          shrink-0
+          items-center
+          justify-center
+          rounded-lg
+          bg-slate-500/10
+          text-slate-400
+        "
+      >
+        <Icon size={15} />
+      </div>
+
+      <span className="text-xs font-medium text-slate-400">
+        {title}
+      </span>
+
+    </div>
+  );
+}
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  description,
+  tone = "violet",
+  progress = 0,
+  progressLabel = "Progreso",
+}: {
+  icon: typeof UsersIcon;
+  label: string;
+  value: number;
+  description: string;
+  progress?: number;
+  progressLabel?: string;
+  tone?: "violet" | "blue" | "green" | "red" | "yellow";
+}) {
+  const toneClasses = {
+    violet: {
+      icon: "bg-violet-500/10 text-violet-400",
+      bar: "bg-violet-400",
+      border: "hover:border-violet-400/20",
+    },
+
+    blue: {
+      bar: "bg-sky-400",
+      icon: "bg-blue-500/10 text-blue-400",
+      border: "hover:border-blue-400/20",
+    },
+
+    green: {
+      bar: "bg-emerald-400",
+      icon: "bg-emerald-500/10 text-emerald-400",
+      border: "hover:border-emerald-400/20",
+    },
+
+    red: {
+      bar: "bg-rose-400",
+      icon: "bg-red-500/10 text-red-400",
+      border: "hover:border-red-400/20",
+    },
+
+    yellow: {
+      bar: "bg-amber-400",
+      icon: "bg-amber-500/10 text-amber-400",
+      border: "hover:border-amber-400/20",
+    },
+  };
+
+  const selectedTone = toneClasses[tone];
+
+  return (
+    <div
+      className={`
+        group
+        rounded-2xl
+        border
+        border-slate-400/[0.18]
+        bg-[#17233a]
+        p-5
+        transition
+        ${selectedTone.border}
+      `}
+    >
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+            {label}
+          </p>
+
+          <p className="mt-2 text-3xl font-bold text-white">{value}</p>
+
+          <p className="mt-1 text-xs text-slate-400">{description}</p>
+        </div>
+
+        <div
+          className={`
+            flex
+            h-10
+            w-10
+            items-center
+            justify-center
+            rounded-xl
+            ${selectedTone.icon}
+          `}
+        >
+          <Icon size={18} />
+        </div>
+      </div>
+      <div className="mt-5 flex items-center justify-between text-[10px] text-slate-300">
+        <span>{progressLabel}</span>
+        <span className="font-semibold tabular-nums">{Math.round(Math.max(0, Math.min(100, progress)))}%</span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-500/30" role="progressbar"
+           aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.max(0, Math.min(100, progress)))}>
+        <div className={`h-full rounded-full transition-all duration-500 ${selectedTone.bar}`}
+             style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function HeaderCell({ children }: { children: React.ReactNode }) {
+  return (
+    <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+      {children}
+    </th>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block space-y-2">
+      <span className="text-xs font-medium text-slate-400">{label}</span>
+
+      <input
+        type="text"
+        value={value}
+        readOnly={false}
+        disabled={false}
+        onChange={(event) => onChange(event.target.value)}
+        className="
+          h-11
+          w-full
+          cursor-text
+          rounded-xl
+          border
+          border-white/[0.08]
+          bg-white/[0.03]
+          px-3
+          text-sm
+          text-white
+          outline-none
+          transition
+          placeholder:text-slate-400
+          hover:border-white/[0.14]
+          focus:border-violet-400/50
+          focus:bg-white/[0.045]
+          focus:ring-2
+          focus:ring-violet-500/10
+        "
+      />
+    </label>
+  );
+}
+
+function Modal({
+  title,
+  children,
+  onClose,
+}: {
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="
+        fixed
+        inset-0
+        z-[200]
+        flex
+        items-center
+        justify-center
+        bg-black/70
+        p-4
+        backdrop-blur-sm
+        pointer-events-auto
+      "
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        className="
+          relative
+          z-[201]
+          w-full
+          max-w-3xl
+          overflow-hidden
+          rounded-2xl
+          border
+          border-white/[0.08]
+          bg-[#17233a]
+          shadow-2xl
+          shadow-black/50
+          pointer-events-auto
+        "
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-slate-400/[0.18] px-6 py-4">
+          <h2 className="text-lg font-semibold text-white">{title}</h2>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-slate-500 transition hover:bg-white/[0.05] hover:text-white"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-6">{children}</div>
+      </div>
+    </div>
+  );
+}

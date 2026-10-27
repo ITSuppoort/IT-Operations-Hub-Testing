@@ -1,0 +1,37 @@
+IT OPERATIONS HUB - GITHUB / RENDER / VERCEL
+================================================
+
+IMPORTANTE: Este paquete es una copia de publicacion del ZIP del proyecto
+recibido el 27-10-2026. Si modificaste codigo despues de generar ese ZIP,
+compara los cambios antes de subir el paquete.
+
+1) Abrir PowerShell en la carpeta EXTRAIDA (contiene frontend, backend).
+2) Ejecutar .\Publicar-GitHub.ps1 -RepoUrl https://github.com/USUARIO/REPOSITORIO.git
+   Crear previamente un repositorio PRIVADO vacio en GitHub. Requiere git
+   instalado y autenticacion GitHub. Script no gestiona login.
+3) Render > New > Blueprint (render.yaml) o New Web Service:
+   repo: el repositorio subido; root: backend; build: npm ci && npm run build;
+   start: node dist/server.js; health path: /; runtime Node.
+   Environment: DATABASE_URL (secret), JWT_SECRET (secret), NODE_ENV=production,
+   FRONTEND_ORIGINS=https://DOMINIO-VERCEL.vercel.app
+   NO ejecutar Prisma migrate deploy ni seed sin auditoria/backups.
+   API OK: https://TU-SERVICIO.onrender.com/ responde JSON status OK.
+4) Vercel > Add New > Project > mismo repo > Root Directory: frontend
+   Framework: Next.js. Build: npm run build.
+   NEXT_PUBLIC_API_URL=https://TU-SERVICIO.onrender.com
+   Re-deploy luego de editar env. No usar localhost ni barra / final.
+5) Actualizar FRONTEND_ORIGINS en Render con URL exacta publicada por Vercel
+   y reiniciar/redeploy API.
+6) Validacion: pagina login, iniciar sesion, dashboard, mapa, posiciones,
+   y una consulta GET autentificada. No probar borrados/ediciones con datos
+   reales; usar cuenta de prueba sin acceso a produccion cuando corresponda.
+
+RIESGOS:
+- Esta implementacion usa cookie HttpOnly cross-site (SameSite=None, Secure)
+  entre vercel.app y onrender.com. Puede fallar por bloqueo de cookies third-party.
+  Para pruebas fiables use dominios propios en el mismo sitio o proxy same-origin.
+- El ZIP original puede ser anterior a cambios locales recientes.
+- Antes de publicar acceso externo compruebe roles, credenciales, base de datos,
+  configuracion de CORS, y privacidad. No use base productiva para pruebas destructivas.
+- No hay despliegue real verificado en este paquete. El estado GitHub/Vercel/Render
+  se comprueba despues de ejecutar desde su cuenta.

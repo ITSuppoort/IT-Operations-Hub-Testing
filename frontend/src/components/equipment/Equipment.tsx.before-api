@@ -1,0 +1,609 @@
+'use client'
+
+import { useState } from 'react'
+import { assetCategories, categoryFields, fieldLabels, requiredFields, type AssetCategory, type AssetField } from './equipmentConfig'
+
+import {
+  Download,
+  Filter,
+  Laptop,
+  Monitor,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  X,
+} from 'lucide-react'
+import {
+  useInventory,
+  type EquipmentItem,
+  type EquipmentStatus,
+} from '@/context/InventoryContext'
+
+type EquipmentForm = Omit<EquipmentItem, 'id' | 'entryDate'>
+
+const initialForm: EquipmentForm = {
+  category: 'principal',
+  brand: '',
+  model: '',
+  quantity: 1,
+  capacity: '',
+  ramGB: null,
+  storageGB: null,
+  pcName: '',
+  serial: '',
+  type: '',
+  user: '',
+  condition: 'new',
+  status: 'available',
+}
+
+export default function Equipment() {
+  const [isNewEquipmentOpen, setIsNewEquipmentOpen] = useState(false)
+
+  const { equipment, addEquipment } = useInventory()
+
+  const [form, setForm] = useState<EquipmentForm>(initialForm)
+
+  const [selectedEquipment, setSelectedEquipment] = useState<EquipmentItem | null>(null)
+  const [formError, setFormError] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState<AssetCategory | ''>('')
+  const visibleFields = selectedCategory ? categoryFields[selectedCategory] : []
+  const stats = [
+    { label: 'Total de equipos', value: equipment.length, description: 'Activos registrados', icon: Monitor },
+    { label: 'Asignados', value: equipment.filter(item => item.status === 'assigned').length, description: 'Actualmente en uso', icon: Laptop },
+    { label: 'Disponibles', value: equipment.filter(item => item.status === 'available').length, description: 'Listos para asignar', icon: Monitor },
+    {
+  label: 'Fuera de servicio',
+  value: equipment.filter(
+    item =>
+      item.status === 'damaged' ||
+      item.status === 'retired' ||
+      item.status === 'returned'
+  ).length,
+  description: 'Dañados, retirados o devueltos',
+  icon: Monitor
+},
+  ]
+
+  const handleRegisterEquipment = () => {
+    if (!selectedCategory || !form.type) {
+      setFormError('Selecciona una categoría y un tipo de activo.')
+      return
+    }
+    const missing = requiredFields[selectedCategory].filter(field => {
+      const value = form[field]
+      return field === 'quantity' ? !Number.isInteger(Number(value)) || Number(value) < 1 : !String(value).trim()
+    })
+    if (missing.length) {
+      setFormError(`Completa los campos obligatorios: ${missing.map(field => fieldLabels[field]).join(', ')}.`)
+      return
+    }
+    if (form.serial.trim() && equipment.some(item => item.serial.trim().toLowerCase() === form.serial.trim().toLowerCase())) {
+      setFormError('Ya existe un activo con ese número de serie en esta sesión.')
+      return
+    }
+    const newEquipment: EquipmentItem = {
+      ...form,
+      category: selectedCategory,
+      id: Date.now(),
+      entryDate: new Date().toISOString(),
+    }
+    addEquipment(newEquipment)
+    setForm(initialForm)
+    setSelectedCategory('')
+    setFormError('')
+    setIsNewEquipmentOpen(false)
+  }
+
+  return (
+    <div className="min-h-full bg-[#0b0b12] p-6 text-white lg:p-8">
+
+      {/* ACCIONES */}
+
+      <section className="mb-6 flex flex-wrap items-center justify-between gap-4">
+
+        <div>
+          <p className="text-sm text-slate-400">
+            Administra y consulta los equipos físicos registrados.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+
+          <button
+            className="
+              flex h-10 items-center gap-2
+              rounded-xl border border-white/10
+              bg-white/[0.04] px-4
+              text-sm text-slate-300
+              transition
+              hover:bg-white/[0.08]
+              hover:text-white
+            "
+          >
+            <Download size={17} />
+            Exportar
+          </button>
+
+          <button
+          onClick={() => setIsNewEquipmentOpen(true)}
+            className="
+              flex h-10 items-center gap-2
+              rounded-xl
+              bg-gradient-to-r
+              from-violet-600 to-purple-600
+              px-4
+              text-sm font-medium text-white
+              shadow-lg shadow-violet-950/20
+              transition
+              hover:from-violet-500
+              hover:to-purple-500
+            "
+          >
+            <Plus size={18} />
+            Nuevo activo
+          </button>
+
+        </div>
+      </section>
+
+      {/* ESTADÍSTICAS */}
+
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+
+        {stats.map((item) => {
+          const Icon = item.icon
+
+          return (
+            <div
+              key={item.label}
+              className="
+                rounded-2xl
+                border border-white/[0.07]
+                bg-[#13131d]
+                p-5
+              "
+            >
+              <div className="flex items-start justify-between">
+
+                <div>
+                  <p className="text-sm text-slate-400">
+                    {item.label}
+                  </p>
+
+                  <p className="mt-2 text-3xl font-bold">
+                    {item.value}
+                  </p>
+
+                  <p className="mt-2 text-xs text-slate-600">
+                    {item.description}
+                  </p>
+                </div>
+
+                <div
+                  className="
+                    flex h-11 w-11 items-center justify-center
+                    rounded-xl
+                    bg-violet-500/10
+                    text-violet-400
+                  "
+                >
+                  <Icon size={20} />
+                </div>
+
+              </div>
+            </div>
+          )
+        })}
+
+      </section>
+
+      {/* TABLA */}
+
+      <section
+        className="
+          mt-6 overflow-hidden
+          rounded-2xl
+          border border-white/[0.07]
+          bg-[#13131d]
+        "
+      >
+
+        {/* FILTROS */}
+
+        <div
+          className="
+            flex flex-wrap items-center gap-3
+            border-b border-white/[0.07]
+            p-4
+          "
+        >
+
+          <div className="relative min-w-[260px] flex-1">
+
+            <Search
+              size={17}
+              className="
+                absolute left-3 top-1/2
+                -translate-y-1/2
+                text-slate-500
+              "
+            />
+
+            <input
+              type="text"
+              placeholder="Buscar por PC Name, serial, usuario..."
+              className="
+                h-10 w-full
+                rounded-xl
+                border border-white/[0.08]
+                bg-white/[0.035]
+                pl-10 pr-4
+                text-sm text-white
+                outline-none
+                placeholder:text-slate-600
+                focus:border-violet-500/50
+              "
+            />
+
+          </div>
+
+          <button
+            className="
+              flex h-10 items-center gap-2
+              rounded-xl border border-white/[0.08]
+              bg-white/[0.035] px-4
+              text-sm text-slate-400
+              hover:bg-white/[0.07]
+              hover:text-white
+            "
+          >
+            <Filter size={16} />
+            Estado
+          </button>
+
+          <button
+            className="
+              flex h-10 items-center gap-2
+              rounded-xl border border-white/[0.08]
+              bg-white/[0.035] px-4
+              text-sm text-slate-400
+              hover:bg-white/[0.07]
+              hover:text-white
+            "
+          >
+            <SlidersHorizontal size={16} />
+            Más filtros
+          </button>
+
+        </div>
+
+        {/* ENCABEZADO TABLA */}
+
+        <div
+          className="
+            hidden grid-cols-[1.3fr_1.3fr_1fr_1fr_1fr_120px]
+            gap-4
+            border-b border-white/[0.07]
+            px-5 py-3
+            text-xs font-semibold
+            uppercase tracking-wide
+            text-slate-500
+            lg:grid
+          "
+        >
+          <span>Equipo</span>
+          <span>Serial</span>
+          <span>Tipo</span>
+          <span>Usuario</span>
+          <span>Estado</span>
+          <span>Acciones</span>
+        </div>
+
+        {/* EQUIPOS */}
+
+      {equipment.length === 0 ? (
+  <div className="flex min-h-[300px] items-center justify-center">
+    <div className="text-center">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-400">
+        <Monitor size={25} />
+      </div>
+
+      <h3 className="mt-4 font-semibold text-white">
+        No hay equipos registrados
+      </h3>
+
+      <p className="mt-2 max-w-sm text-sm text-slate-500">
+        Registra un nuevo equipo para comenzar a construir el inventario.
+      </p>
+    </div>
+  </div>
+) : (
+  <div>
+    {equipment.map((item) => (
+      <div
+        key={item.id}
+        className="
+          grid grid-cols-1 gap-3
+          border-b border-white/[0.05]
+          px-5 py-4
+          transition hover:bg-white/[0.025]
+          lg:grid-cols-[1.3fr_1.3fr_1fr_1fr_1fr_120px]
+          lg:items-center lg:gap-4
+        "
+      >
+        <div>
+          <p className="font-medium text-white">
+            {item.pcName || item.brand || item.type}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-600">
+            {item.serial || 'Sin serial'} · Entrada: {new Date(item.entryDate).toLocaleDateString('es-DO')}
+          </p>
+        </div>
+
+        <span className="text-sm text-slate-300">
+          {item.serial || 'Sin serial'}
+        </span>
+
+        <span className="text-sm capitalize text-slate-400">
+          {item.type}
+        </span>
+
+        <span className="text-sm text-slate-400">
+          {item.user || 'Sin asignar'}
+        </span>
+
+        <div>
+          <span
+            className={`
+              inline-flex rounded-full px-3 py-1
+              text-xs font-medium
+              ${
+                item.status === 'available'
+                  ? 'bg-emerald-500/10 text-emerald-400'
+                  : item.status === 'assigned'
+                    ? 'bg-blue-500/10 text-blue-400'
+                    : item.status === 'repair'
+                      ? 'bg-amber-500/10 text-amber-400'
+                      : item.status === 'damaged'
+                        ? 'bg-red-500/10 text-red-400'
+                        : 'bg-slate-500/10 text-slate-400'
+              }
+            `}
+          >
+            {item.status === 'available' && 'Disponible'}
+            {item.status === 'assigned' && 'Asignado'}
+            {item.status === 'repair' && 'En reparación'}
+            {item.status === 'damaged' && 'Dañado'}
+            {item.status === 'retired' && 'Retirado'}
+            {item.status === 'returned' && 'Devuelto a proveedor'}
+          </span>
+        </div>
+
+        <button onClick={() => setSelectedEquipment(item)} className="text-left text-sm font-medium text-violet-400 transition hover:text-violet-300">
+          Ver detalles
+        </button>
+      </div>
+    ))}
+  </div>
+)}
+
+      </section>
+      {/* MODAL NUEVO EQUIPO */}
+
+      {isNewEquipmentOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+
+          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-white/[0.08] bg-[#13131d] shadow-2xl">
+
+            {/* HEADER */}
+
+            <div className="flex items-center justify-between border-b border-white/[0.07] px-6 py-5">
+              <div>
+                <h2 className="text-lg font-semibold text-white">
+                  Nuevo activo
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Registra un nuevo equipo físico en el inventario.
+                </p>
+              </div>
+
+              <button
+                onClick={() => { setIsNewEquipmentOpen(false); setFormError('') }}
+                className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+              >
+                <X size={19} />
+              </button>
+            </div>
+
+            {/* FORMULARIO CONDICIONAL */}
+            <div className="max-h-[65vh] overflow-y-auto p-6">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm text-slate-400">Categoría *</label>
+                  <select value={selectedCategory} onChange={e => {
+                    const category = e.target.value as AssetCategory | ''
+                    setSelectedCategory(category)
+                    setForm({ ...initialForm, category: category || 'principal' })
+                    setFormError('')
+                  }} className="h-11 w-full rounded-xl border border-white/10 bg-[#181822] px-4 text-sm text-white">
+                    <option value="">Seleccionar categoría</option>
+                    {(Object.keys(assetCategories) as AssetCategory[]).map(category => (
+                      <option key={category} value={category}>{assetCategories[category].label}</option>
+                    ))}
+                  </select>
+                </div>
+                {selectedCategory && (
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-400">Tipo de activo *</label>
+                    <select value={form.type} onChange={e => { setForm(current => ({ ...current, type: e.target.value })); setFormError('') }} className="h-11 w-full rounded-xl border border-white/10 bg-[#181822] px-4 text-sm text-white">
+                      <option value="">Seleccionar tipo</option>
+                      {assetCategories[selectedCategory].types.map(type => <option key={type} value={type}>{type}</option>)}
+                    </select>
+                  </div>
+                )}
+                {selectedCategory && form.type && (
+                  <>
+                    <p className="md:col-span-2 rounded-xl border border-violet-500/20 bg-violet-500/10 p-3 text-sm text-violet-200">
+                      Completa los datos de {form.type}. Los campos con * son obligatorios.
+                    </p>
+                    {visibleFields.map((field: AssetField) => {
+                      const required = requiredFields[selectedCategory].includes(field)
+                      const value = form[field]
+                      return (
+                        <div key={field}>
+                          <label className="mb-2 block text-sm text-slate-400">{fieldLabels[field]}{required ? ' *' : ''}</label>
+                          <input
+                            type={field === 'quantity' ? 'number' : 'text'}
+                            min={field === 'quantity' ? 1 : undefined}
+                            step={field === 'quantity' ? 1 : undefined}
+                            value={value}
+                            onChange={e => {
+                              const next = field === 'quantity' ? Number(e.target.value) : e.target.value
+                              setForm(current => ({ ...current, [field]: next }))
+                              setFormError('')
+                            }}
+                            placeholder={fieldLabels[field]}
+                            className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.035] px-4 text-sm text-white outline-none focus:border-violet-500/50"
+                          />
+                        </div>
+                      )
+                    })}
+                    <div>
+                      <label className="mb-2 block text-sm text-slate-400">Estado</label>
+                      <select value={form.status} onChange={e => setForm(current => ({ ...current, status: e.target.value as EquipmentStatus }))} className="h-11 w-full rounded-xl border border-white/10 bg-[#181822] px-4 text-sm text-white">
+                        <option value="available">Disponible</option>
+                        <option value="assigned">Asignado</option>
+                        <option value="repair">En reparación</option>
+                        <option value="damaged">Dañado</option>
+                        <option value="retired">Retirado</option>
+                      </select>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/[0.035] p-3 text-sm text-slate-400">
+                      Fecha de entrada <span className="ml-2 text-emerald-400">Automática al guardar</span>
+                    </div>
+                  </>
+                )}
+              </div>
+              {formError && <p role="alert" className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{formError}</p>}
+            </div>
+
+            {/* FOOTER */}
+
+            <div className="flex items-center justify-end gap-3 border-t border-white/[0.07] px-6 py-4">
+
+              <button
+                onClick={() => { setIsNewEquipmentOpen(false); setFormError('') }}
+                className="h-10 rounded-xl border border-white/[0.08] px-4 text-sm text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
+              >
+                Cancelar
+              </button>
+
+              <button
+              onClick={handleRegisterEquipment}
+                className="flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 px-5 text-sm font-medium text-white transition hover:from-violet-500 hover:to-purple-500"
+              >
+                <Plus size={17} />
+                Registrar activo
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+      {/* DETALLES DEL ACTIVO */}
+      {selectedEquipment && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelectedEquipment(null)
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="equipment-details-title"
+            className="w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-[#13131d] shadow-2xl"
+          >
+            <div className="flex items-start justify-between border-b border-white/10 px-6 py-5">
+              <div>
+                <h2 id="equipment-details-title" className="text-lg font-semibold">Detalles del activo</h2>
+                <p className="mt-1 text-sm text-slate-400">{selectedEquipment.pcName || selectedEquipment.brand || selectedEquipment.type}</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Cerrar detalles"
+                onClick={() => setSelectedEquipment(null)}
+                className="rounded-xl p-2 text-slate-400 hover:bg-white/10 hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <dl className="grid max-h-[65vh] grid-cols-1 gap-4 overflow-y-auto p-6 sm:grid-cols-2">
+              {([
+                ['Categoría', assetCategories[selectedEquipment.category].label],
+                ['Tipo', selectedEquipment.type],
+                ['PC Name', selectedEquipment.pcName],
+                ['Número de serie', selectedEquipment.serial],
+                ['Marca', selectedEquipment.brand],
+                ['Modelo', selectedEquipment.model],
+                 [
+                  'Memoria RAM',
+                selectedEquipment.ramGB !== null
+                   ? `${selectedEquipment.ramGB} GB`
+                   : '',
+               ],
+                [
+                  'Almacenamiento',
+                selectedEquipment.storageGB !== null
+                   ? `${selectedEquipment.storageGB} GB`
+                   : '',
+                ],
+                ['Cantidad', String(selectedEquipment.quantity)],
+                ['Capacidad o especificación', selectedEquipment.capacity],
+                ['Usuario', selectedEquipment.user],
+                [
+                   'Condición',
+                  {
+                    new: 'Nuevo',
+                    used: 'Usado',
+                    damaged: 'Dañado',
+                  }[selectedEquipment.condition],
+                ],
+                ['Estado', {
+                  available: 'Disponible', assigned: 'Asignado', repair: 'En reparación',
+                  damaged: 'Dañado', retired: 'Retirado',
+                  returned: 'Devuelto a proveedor',
+                }[selectedEquipment.status]],
+                ['Fecha y hora de entrada', new Date(selectedEquipment.entryDate).toLocaleString('es-DO', {
+                  dateStyle: 'long', timeStyle: 'short',
+                })],
+              ] as [string, string][])
+                .filter(([, value]) => value.trim() !== '')
+                .map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-white/[0.07] bg-white/[0.025] p-3">
+                    <dt className="text-xs text-slate-500">{label}</dt>
+                    <dd className="mt-1 break-words text-sm text-white">{value || 'No registrado'}</dd>
+                  </div>
+                ))}
+            </dl>
+            <div className="flex justify-end border-t border-white/10 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => setSelectedEquipment(null)}
+                className="rounded-xl bg-violet-600 px-5 py-2 text-sm font-medium hover:bg-violet-500"
+              >
+                Cerrar
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
+  )
+}

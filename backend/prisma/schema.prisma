@@ -1,0 +1,348 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model SystemUser {
+  id                   String             @id @default(uuid())
+  firstName            String
+  lastName             String
+  email                String             @unique
+  backupEmail          String?
+  passwordHash         String
+  status               String             @default("ACTIVE")
+  lastLogin            DateTime?
+  roleId               String?
+  departmentId         String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  configurationChanges Configuration[]    @relation("ConfigurationUpdatedBy")
+  assignedEquipment    Equipment[]        @relation("EquipmentUser")
+  historyEntries       HistoryEntry[]     @relation("HistoryPerformedBy")
+  resets               PasswordReset[]
+  assignedPositions    Position[]         @relation("PositionUser")
+  logs                 SecurityLog[]
+  sessions             Session[]
+  department           Department?        @relation(fields: [departmentId], references: [id])
+  role                 Role?              @relation(fields: [roleId], references: [id])
+  codes                VerificationCode[]
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  createdAt   DateTime         @default(now())
+  permissions RolePermission[]
+  users       SystemUser[]
+}
+
+model Permission {
+  id    String           @id @default(uuid())
+  name  String           @unique
+  roles RolePermission[]
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id])
+  role         Role       @relation(fields: [roleId], references: [id])
+
+  @@unique([roleId, permissionId])
+}
+
+model PasswordReset {
+  id        String     @id @default(uuid())
+  userId    String
+  token     String     @unique
+  expiresAt DateTime
+  used      Boolean    @default(false)
+  createdAt DateTime   @default(now())
+  user      SystemUser @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model VerificationCode {
+  id        String     @id @default(uuid())
+  userId    String
+  code      String
+  expiresAt DateTime
+  used      Boolean    @default(false)
+  createdAt DateTime   @default(now())
+  user      SystemUser @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Session {
+  id        String     @id @default(uuid())
+  userId    String
+  token     String     @unique
+  ipAddress String?
+  device    String?
+  expiresAt DateTime
+  createdAt DateTime   @default(now())
+  user      SystemUser @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model SecurityLog {
+  id        String     @id @default(uuid())
+  userId    String
+  action    String
+  ipAddress String?
+  createdAt DateTime   @default(now())
+  user      SystemUser @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model Department {
+  id              String            @id @default(uuid())
+  name            String            @unique
+  description     String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  equipment       Equipment[]
+  inventoryPeople InventoryPerson[]
+  users           SystemUser[]
+}
+
+model InventoryPerson {
+  id           String      @id @default(uuid())
+  employeeId   String      @unique
+  firstName    String
+  lastName     String
+  email        String?
+  phone        String?
+  jobTitle     String?
+  status       String      @default("ACTIVE")
+  departmentId String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  equipment    Equipment[] @relation("InventoryPersonEquipment")
+  department   Department? @relation(fields: [departmentId], references: [id])
+  position     Position?   @relation("InventoryPersonPosition")
+
+  @@index([departmentId])
+  @@index([status])
+}
+
+model MapLocation {
+  id          String        @id @default(uuid())
+  name        String
+  type        String
+  floorNumber Int?
+  wing        String?
+  parentId    String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  areas       Area[]
+  equipment   Equipment[]
+  parent      MapLocation?  @relation("LocationHierarchy", fields: [parentId], references: [id])
+  children    MapLocation[] @relation("LocationHierarchy")
+  positions   Position[]
+
+  @@index([parentId])
+  @@index([floorNumber])
+}
+
+model Area {
+  id         String      @id @default(uuid())
+  name       String
+  locationId String
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  location   MapLocation @relation(fields: [locationId], references: [id])
+  positions  Position[]
+
+  @@index([locationId])
+}
+
+model Position {
+  id                String           @id @default(uuid())
+  code              String           @unique
+  name              String?
+  locationId        String
+  areaId            String
+  wing              String?
+  status            String           @default("EMPTY")
+  userCell          String?
+  equipmentCell     String?
+  assignedUserId    String?
+  inventoryPersonId String?          @unique
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  equipment         Equipment?
+  area              Area             @relation(fields: [areaId], references: [id])
+  assignedUser      SystemUser?      @relation("PositionUser", fields: [assignedUserId], references: [id])
+  inventoryPerson   InventoryPerson? @relation("InventoryPersonPosition", fields: [inventoryPersonId], references: [id])
+  location          MapLocation      @relation(fields: [locationId], references: [id])
+
+  @@index([locationId])
+  @@index([areaId])
+  @@index([assignedUserId])
+  @@index([inventoryPersonId])
+  @@index([status])
+}
+
+model Equipment {
+  id                   String           @id @default(uuid())
+  category             String
+  type                 String?
+  brand                String
+  model                String?
+  serial               String?          @unique
+  assetTag             String?          @unique
+
+  // Datos técnicos del equipo
+  pcName               String?
+  ramGB                Int?
+  storageGB            Int?
+  quantity             Int              @default(1)
+
+  condition            String           @default("AVAILABLE")
+  status               String           @default("ACTIVE")
+  location             String?
+  assignedUser         String?
+  assignedUserId       String?
+  inventoryPersonId    String?
+  departmentId         String?
+  mapLocationId        String?
+  positionId           String?          @unique
+  entryDate            DateTime         @default(now())
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  damages              Damage[]
+  assignedUserRelation SystemUser?      @relation("EquipmentUser", fields: [assignedUserId], references: [id])
+  department           Department?      @relation(fields: [departmentId], references: [id])
+  inventoryPerson      InventoryPerson? @relation("InventoryPersonEquipment", fields: [inventoryPersonId], references: [id])
+  mapLocation          MapLocation?     @relation(fields: [mapLocationId], references: [id])
+  position             Position?        @relation(fields: [positionId], references: [id])
+  movements            Movement[]
+
+  @@index([departmentId])
+  @@index([mapLocationId])
+  @@index([assignedUserId])
+  @@index([inventoryPersonId])
+  @@index([condition])
+  @@index([status])
+}
+
+model Component {
+  id                 String              @id @default(uuid())
+  type               String
+  brand              String?
+  quantity           Int                 @default(0)
+  minimumStock       Int                 @default(0)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  inventoryMovements InventoryMovement[]
+}
+
+model InventoryMovement {
+  id               String    @id @default(uuid())
+  componentId      String
+  type             String
+  quantity         Int
+  previousQuantity Int
+  newQuantity      Int
+  reason           String?
+  createdBy        String?
+  createdAt        DateTime  @default(now())
+  component        Component @relation(fields: [componentId], references: [id])
+
+  @@index([componentId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model Damage {
+  id          String    @id @default(uuid())
+  equipmentId String
+  type        String
+  description String
+  status      String    @default("OPEN")
+  priority    String    @default("MEDIUM")
+  reportedBy  String?
+  reportedAt  DateTime  @default(now())
+  repairedAt  DateTime?
+  repairedBy  String?
+  repairNotes String?
+  cost        Decimal?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  equipment   Equipment @relation(fields: [equipmentId], references: [id])
+
+  @@index([equipmentId])
+  @@index([status])
+  @@index([priority])
+  @@index([reportedAt])
+}
+
+model Movement {
+  id           String    @id @default(uuid())
+  equipmentId  String
+  action       String
+  fromLocation String?
+  toLocation   String?
+  assignedUser String?
+  createdBy    String?
+  createdAt    DateTime  @default(now())
+  equipment    Equipment @relation(fields: [equipmentId], references: [id])
+
+  @@index([equipmentId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model Configuration {
+  id          String      @id @default(uuid())
+  key         String      @unique
+  category    String
+  value       Json
+  description String?
+  isEditable  Boolean     @default(true)
+  updatedById String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  updatedBy   SystemUser? @relation("ConfigurationUpdatedBy", fields: [updatedById], references: [id])
+
+  @@index([category])
+  @@index([updatedById])
+}
+
+model HistoryEntry {
+  id            String      @id @default(uuid())
+  module        String
+  entityType    String
+  entityId      String?
+  action        String
+  description   String?
+  oldData       Json?
+  newData       Json?
+  performedById String?
+  ipAddress     String?
+  device        String?
+  createdAt     DateTime    @default(now())
+  performedBy   SystemUser? @relation("HistoryPerformedBy", fields: [performedById], references: [id])
+
+  @@index([module])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([action])
+  @@index([performedById])
+  @@index([createdAt])
+}

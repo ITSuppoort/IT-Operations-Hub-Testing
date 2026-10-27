@@ -1,0 +1,672 @@
+﻿.page {
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  background: #050711;
+  color: #fff;
+}
+
+.backgrounds {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.background {
+  position: absolute;
+  inset: -2%;
+  background-position: center;
+  background-size: cover;
+  opacity: 0;
+  transform: scale(1.04);
+  transition:
+    opacity 1.6s ease,
+    transform 8s ease;
+}
+
+.background.active {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.globalOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(4, 6, 17, 0.94) 0%,
+      rgba(4, 6, 17, 0.76) 42%,
+      rgba(4, 6, 17, 0.78) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(4, 6, 17, 0.18),
+      rgba(4, 6, 17, 0.82)
+    );
+}
+
+.header {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 30px 46px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: white;
+  cursor: pointer;
+  text-align: left;
+}
+
+.logo {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border: 1px solid rgba(167, 139, 250, 0.28);
+  border-radius: 15px;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(139, 92, 246, 0.95),
+      rgba(91, 33, 182, 0.95)
+    );
+  box-shadow:
+    0 12px 35px rgba(124, 58, 237, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.brandName {
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+}
+
+.brandSubtitle {
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.language {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 13px;
+  background: rgba(11, 13, 29, 0.52);
+  color: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(14px);
+  cursor: pointer;
+}
+
+.languageChevron {
+  margin-left: 2px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.content {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(420px, 0.88fr);
+  align-items: center;
+  min-height: calc(100vh - 138px);
+  padding: 20px 7vw 70px;
+  gap: 70px;
+}
+
+.presentation {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.presentationInner {
+  width: min(720px, 100%);
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 24px;
+  color: rgba(196, 181, 253, 0.9);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+}
+
+.eyebrow span {
+  color: rgba(167, 139, 250, 0.55);
+}
+
+.presentation h1 {
+  max-width: 720px;
+  margin: 0;
+  font-size: clamp(48px, 5vw, 76px);
+  font-weight: 760;
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.presentation h1 strong {
+  display: block;
+  margin-top: 7px;
+  background:
+    linear-gradient(
+      100deg,
+      #ffffff 0%,
+      #c4b5fd 35%,
+      #8b5cf6 75%,
+      #a78bfa 100%
+    );
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.presentationText {
+  max-width: 620px;
+  margin: 30px 0 0;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+.highlights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(190px, 1fr));
+  gap: 16px;
+  max-width: 620px;
+  margin-top: 34px;
+}
+
+.highlight {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 15px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 15px;
+  background: rgba(10, 12, 27, 0.36);
+  backdrop-filter: blur(12px);
+}
+
+.highlightIcon {
+  display: grid;
+  place-items: center;
+  width: 39px;
+  height: 39px;
+  flex-shrink: 0;
+  border: 1px solid rgba(167, 139, 250, 0.22);
+  border-radius: 11px;
+  background: rgba(124, 58, 237, 0.16);
+  color: #c4b5fd;
+}
+
+.highlight strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.highlight span {
+  display: block;
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.43);
+  font-size: 11px;
+}
+
+.backgroundIndicator {
+  display: flex;
+  gap: 7px;
+  margin-top: 35px;
+}
+
+.backgroundIndicator span {
+  display: block;
+  width: 25px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  transition:
+    width 300ms ease,
+    background 300ms ease;
+}
+
+.backgroundIndicator .indicatorActive {
+  width: 48px;
+  background: #8b5cf6;
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.65);
+}
+
+.loginArea {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.card {
+  width: min(500px, 100%);
+  padding: 39px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 25px;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(15, 18, 39, 0.88),
+      rgba(7, 9, 22, 0.84)
+    );
+  box-shadow:
+    0 40px 100px rgba(0, 0, 0, 0.52),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(26px);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  margin-bottom: 31px;
+}
+
+.cardIcon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  border-radius: 14px;
+  background: rgba(124, 58, 237, 0.16);
+  color: #c4b5fd;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.cardEyebrow {
+  margin: 2px 0 6px;
+  color: #a78bfa;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.2em;
+}
+
+.card h2 {
+  margin: 0;
+  color: white;
+  font-size: 31px;
+  font-weight: 720;
+  letter-spacing: -0.045em;
+}
+
+.cardDescription {
+  margin: 7px 0 0;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 13px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 19px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.field > span {
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.field input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 52px;
+  padding: 0 15px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 12px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.045);
+  color: white;
+  font-size: 13px;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.field input::placeholder {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.field input:hover {
+  border-color: rgba(255, 255, 255, 0.17);
+}
+
+.field input:focus {
+  border-color: rgba(139, 92, 246, 0.72);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 0 0 3px rgba(124, 58, 237, 0.12),
+    0 0 25px rgba(124, 58, 237, 0.08);
+}
+
+.passwordWrapper {
+  position: relative;
+}
+
+.passwordWrapper input {
+  padding-right: 48px;
+}
+
+.passwordToggle {
+  position: absolute;
+  top: 50%;
+  right: 13px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.42);
+  cursor: pointer;
+}
+
+.passwordToggle:hover {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: -2px;
+}
+
+.remember {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.remember input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.checkbox {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.045);
+  color: white;
+}
+
+.remember input:checked + .checkbox {
+  border-color: #8b5cf6;
+  background: #7c3aed;
+  box-shadow: 0 0 14px rgba(124, 58, 237, 0.35);
+}
+
+.forgot {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #a78bfa;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.forgot:hover {
+  color: #c4b5fd;
+}
+
+.submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  width: 100%;
+  height: 53px;
+  margin-top: 5px;
+  border: 0;
+  border-radius: 12px;
+  background:
+    linear-gradient(
+      100deg,
+      #7c3aed,
+      #8b5cf6
+    );
+  color: white;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+  box-shadow:
+    0 15px 35px rgba(124, 58, 237, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    filter 180ms ease;
+}
+
+.submit:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow:
+    0 18px 42px rgba(124, 58, 237, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 25px 0 18px;
+}
+
+.divider span {
+  height: 1px;
+  flex: 1;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.divider small {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 10px;
+}
+
+.microsoft {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  width: 100%;
+  height: 49px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: not-allowed;
+}
+
+.microsoft small {
+  position: absolute;
+  right: 12px;
+  color: rgba(167, 139, 250, 0.75);
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.microsoftLogo {
+  display: grid;
+  grid-template-columns: 7px 7px;
+  grid-template-rows: 7px 7px;
+  gap: 2px;
+}
+
+.microsoftLogo i:nth-child(1) {
+  background: #f25022;
+}
+
+.microsoftLogo i:nth-child(2) {
+  background: #7fba00;
+}
+
+.microsoftLogo i:nth-child(3) {
+  background: #00a4ef;
+}
+
+.microsoftLogo i:nth-child(4) {
+  background: #ffb900;
+}
+
+.security {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 23px;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 10px;
+}
+
+.footer {
+  position: absolute;
+  right: 46px;
+  bottom: 25px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: rgba(255, 255, 255, 0.31);
+  font-size: 9px;
+}
+
+.footer > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.75);
+}
+
+@media (max-width: 1050px) {
+  .content {
+    grid-template-columns: 1fr;
+    padding: 30px 7vw 80px;
+  }
+
+  .presentation {
+    display: none;
+  }
+
+  .loginArea {
+    min-height: calc(100vh - 150px);
+    align-items: center;
+  }
+
+  .card {
+    width: min(500px, 100%);
+  }
+}
+
+@media (max-width: 600px) {
+  .header {
+    padding: 20px 22px;
+  }
+
+  .logo {
+    width: 43px;
+    height: 43px;
+    border-radius: 13px;
+  }
+
+  .brandName {
+    font-size: 14px;
+  }
+
+  .brandSubtitle {
+    font-size: 8px;
+  }
+
+  .language {
+    height: 38px;
+    padding: 0 11px;
+  }
+
+  .content {
+    padding: 20px 18px 60px;
+  }
+
+  .loginArea {
+    min-height: calc(100vh - 120px);
+  }
+
+  .card {
+    padding: 27px 21px;
+    border-radius: 20px;
+  }
+
+  .card h2 {
+    font-size: 27px;
+  }
+
+  .cardHeader {
+    margin-bottom: 25px;
+  }
+
+  .microsoft small {
+    display: none;
+  }
+
+  .footer {
+    display: none;
+  }
+}

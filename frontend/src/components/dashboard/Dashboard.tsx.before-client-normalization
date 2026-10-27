@@ -1,0 +1,1692 @@
+﻿'use client'
+import { apiRequest } from "@/lib/api";
+
+import Link from 'next/link'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  Activity,
+  ArrowRight,
+  Boxes,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  CircleAlert,
+  Clock3,
+  Computer,
+  Laptop,
+  MapPin,
+  Monitor,
+  PackageCheck,
+  PackageOpen,
+  RefreshCw,
+  Users,
+  Wrench,
+  type LucideIcon,
+} from 'lucide-react'
+
+/* =========================================================
+   TIPOS
+   ========================================================= */
+
+interface DashboardData {
+  equipment?: {
+    total?: number
+    assigned?: number
+    available?: number
+    damaged?: number
+    inactive?: number
+
+    byCategory?: {
+      category: string
+      total: number
+    }[]
+
+    byCondition?: {
+      condition: string
+      total: number
+    }[]
+
+    byStatus?: {
+      status: string
+      total: number
+    }[]
+  }
+
+  inventory?: {
+    componentTypes?: number
+    totalUnits?: number
+
+    lowStock?: unknown[]
+
+    components?: {
+      id: string
+      type: string
+      brand: string
+      quantity: number
+      minimumStock?: number
+      createdAt?: string
+      updatedAt?: string
+    }[]
+  }
+
+  movements?: {
+    total?: number
+
+    byAction?: {
+      action: string
+      total: number
+    }[]
+
+    recent?: RecentMovement[]
+  }
+
+  users?: {
+    total?: number
+  }
+}
+
+interface DashboardResponse {
+  message?: string
+  data?: DashboardData
+}
+
+interface RecentMovement {
+  id?: string
+  action?: string
+  fromLocation?: string | null
+  toLocation?: string | null
+  assignedUser?: string | null
+  createdAt?: string | null
+
+  equipment?: {
+    id?: string
+    category?: string
+    brand?: string
+    model?: string
+    assetTag?: string
+    serialNumber?: string
+  }
+}
+
+interface StatCardProps {
+  title: string
+  value: number
+  description: string
+  icon: LucideIcon
+  variant: 'purple' | 'blue' | 'green' | 'orange'
+  href?: string
+}
+
+interface StatusItem {
+  name: string
+  value: number
+  icon: LucideIcon
+  variant: 'blue' | 'green' | 'red' | 'orange'
+}
+
+interface EquipmentItem {
+  name: string
+  value: number
+  icon: LucideIcon
+  variant: 'purple' | 'blue' | 'orange' | 'green'
+}
+
+/* =========================================================
+   API
+   ========================================================= */
+/* =========================================================
+   UTILIDADES
+   ========================================================= */
+
+function normalize(value?: string | null) {
+  return String(value ?? '')
+    .trim()
+    .toUpperCase()
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat('es-DO').format(value)
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return 'â€”'
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat('es-DO', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function formatAction(action?: string) {
+  switch (normalize(action)) {
+    case 'ENTRY':
+      return 'ENTRADA'
+
+    case 'ASSIGN':
+    case 'ASSIGNMENT':
+      return 'ASIGNACIÃ“N'
+
+    case 'RETURN':
+      return 'DEVOLUCIÃ“N'
+
+    case 'TRANSFER':
+      return 'TRASLADO'
+
+    case 'DAMAGE':
+      return 'DAÃ‘O'
+
+    case 'REPAIR':
+      return 'REPARACIÃ“N'
+
+    case 'EXIT':
+      return 'SALIDA'
+
+    default:
+      return action || 'MOVIMIENTO'
+  }
+}
+
+function getActionClasses(action?: string) {
+  switch (normalize(action)) {
+    case 'ENTRY':
+      return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400'
+
+    case 'ASSIGN':
+    case 'ASSIGNMENT':
+      return 'border-blue-500/20 bg-blue-500/10 text-blue-400'
+
+    case 'RETURN':
+      return 'border-cyan-500/20 bg-cyan-500/10 text-cyan-400'
+
+    case 'TRANSFER':
+      return 'border-violet-500/20 bg-violet-500/10 text-violet-400'
+
+    case 'DAMAGE':
+      return 'border-red-500/20 bg-red-500/10 text-red-400'
+
+    case 'REPAIR':
+      return 'border-orange-500/20 bg-orange-500/10 text-orange-400'
+
+    case 'EXIT':
+      return 'border-slate-500/20 bg-slate-500/10 text-slate-400'
+
+    default:
+      return 'border-slate-500/20 bg-slate-500/10 text-slate-400'
+  }
+}
+
+/* =========================================================
+   DASHBOARD
+   ========================================================= */
+
+export default function Dashboard() {
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  /* =======================================================
+     CARGAR DATOS
+     ======================================================= */
+
+  const loadDashboard = useCallback(async (isRefresh = false) => {
+    try {
+      if (isRefresh) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
+
+      setError(null)
+
+      const response = await apiRequest(`/dashboard`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+        cache: 'no-store',
+      })
+
+      if (!response.ok) {
+        throw new Error(
+          `Backend respondiÃ³ con HTTP ${response.status}`,
+        )
+      }
+
+      const result: DashboardResponse = await response.json()
+
+      setDashboard(result.data ?? null)
+
+      console.log(
+        'Dashboard data loaded successfully:',
+        result.data,
+      )
+    } catch (err) {
+      console.error('Error loading dashboard:', err)
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudieron cargar los datos del dashboard.',
+      )
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadDashboard()
+  }, [loadDashboard])
+
+  /* =======================================================
+     DATOS
+     ======================================================= */
+
+  const equipmentData = dashboard?.equipment ?? {}
+  const inventoryData = dashboard?.inventory ?? {}
+  const usersData = dashboard?.users ?? {}
+  const movementsData = dashboard?.movements ?? {}
+
+  const summary = {
+    totalAssets: equipmentData.total ?? 0,
+    assigned: equipmentData.assigned ?? 0,
+    available: equipmentData.available ?? 0,
+    damaged: equipmentData.damaged ?? 0,
+
+    repairs:
+      equipmentData.byCondition?.find((item) =>
+        ['REPAIR', 'REPAIRING', 'IN_REPAIR'].includes(
+          normalize(item.condition),
+        ),
+      )?.total ?? 0,
+
+    users: usersData.total ?? 0,
+  }
+
+  const recentMovements = movementsData.recent ?? []
+
+  /* =======================================================
+     EQUIPOS POR CATEGORÃA
+     ======================================================= */
+
+  const categoryTotals = equipmentData.byCategory ?? []
+
+  const getCategoryTotal = (names: string[]) => {
+    return (
+      categoryTotals.find((item) =>
+        names.includes(normalize(item.category)),
+      )?.total ?? 0
+    )
+  }
+
+  const equipment: EquipmentItem[] = [
+    {
+      name: 'Laptops',
+      value: getCategoryTotal(['LAPTOP', 'LAPTOPS']),
+      icon: Laptop,
+      variant: 'purple',
+    },
+    {
+      name: 'Desktops',
+      value: getCategoryTotal(['DESKTOP', 'DESKTOPS']),
+      icon: Computer,
+      variant: 'blue',
+    },
+    {
+      name: 'Monitores',
+      value: getCategoryTotal(['MONITOR', 'MONITORES']),
+      icon: Monitor,
+      variant: 'orange',
+    },
+  ]
+
+  /* =======================================================
+     ESTADOS
+     ======================================================= */
+
+  const status: StatusItem[] = [
+    {
+      name: 'En uso',
+      value: summary.assigned,
+      icon: Users,
+      variant: 'blue',
+    },
+    {
+      name: 'Disponibles',
+      value: summary.available,
+      icon: CheckCircle2,
+      variant: 'green',
+    },
+    {
+      name: 'DaÃ±ados',
+      value: summary.damaged,
+      icon: CircleAlert,
+      variant: 'red',
+    },
+    {
+      name: 'En reparaciÃ³n',
+      value: summary.repairs,
+      icon: Wrench,
+      variant: 'orange',
+    },
+  ]
+
+  /* =======================================================
+     PORCENTAJES
+     ======================================================= */
+
+  const statusTotal = Math.max(
+    summary.totalAssets,
+    status.reduce((total, item) => total + item.value, 0),
+  )
+
+  const equipmentTotal = equipment.reduce(
+    (total, item) => total + item.value,
+    0,
+  )
+
+  const donutGradient = useMemo(() => {
+    if (equipmentTotal <= 0) {
+      return 'conic-gradient(#272735 0deg 360deg)'
+    }
+
+    let current = 0
+
+    const colors = [
+      '#8b5cf6',
+      '#3b82f6',
+      '#f97316',
+    ]
+
+    const segments = equipment.map((item, index) => {
+      const start = current
+      const degrees = (item.value / equipmentTotal) * 360
+      current += degrees
+
+      return `${colors[index]} ${start}deg ${current}deg`
+    })
+
+    return `conic-gradient(${segments.join(', ')})`
+  }, [equipment, equipmentTotal])
+
+  /* =======================================================
+     FECHA
+     ======================================================= */
+
+  const currentDate = new Intl.DateTimeFormat('es-DO', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date())
+
+  /* =======================================================
+     RENDER
+     ======================================================= */
+
+  return (
+    <div className="min-h-full bg-[#080b14] text-white">
+      <div className="mx-auto max-w-[1800px] p-5 md:p-7 xl:p-8">
+
+        {/* =================================================
+            CABECERA
+        ================================================= */}
+
+        <section className="mb-7">
+
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-sm font-semibold text-violet-400">
+                  IT Asset Management
+                </span>
+
+                <span className="h-1 w-1 rounded-full bg-slate-600" />
+
+                <span className="text-xs text-slate-500">
+                  Overview
+                </span>
+              </div>
+
+              <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
+                Resumen general
+              </h1>
+
+              <p className="mt-2 max-w-2xl text-sm text-slate-400">
+                Estado actual de los equipos, inventario y actividad
+                del sistema.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+
+              <div className="hidden items-center gap-3 rounded-2xl border border-white/[0.07] bg-[#111521] px-4 py-3 md:flex">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400">
+                  <CalendarDays size={18} />
+                </div>
+
+                <div>
+                  <p className="text-xs capitalize text-slate-500">
+                    {currentDate}
+                  </p>
+
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    InformaciÃ³n en tiempo real
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => loadDashboard(true)}
+                disabled={refreshing}
+                className="
+                  flex h-12 items-center gap-2 rounded-2xl
+                  border border-white/[0.08]
+                  bg-[#111521]
+                  px-4
+                  text-sm font-medium text-slate-300
+                  transition
+                  hover:border-violet-500/30
+                  hover:bg-violet-500/10
+                  hover:text-white
+                  disabled:cursor-not-allowed
+                  disabled:opacity-60
+                "
+              >
+                <RefreshCw
+                  size={17}
+                  className={refreshing ? 'animate-spin' : ''}
+                />
+
+                <span className="hidden sm:inline">
+                  Actualizar
+                </span>
+              </button>
+
+            </div>
+
+          </div>
+
+        </section>
+
+        {/* =================================================
+            ERROR
+        ================================================= */}
+
+        {error && (
+          <div className="mb-6 rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
+            <div className="flex items-start gap-3">
+
+              <CircleAlert
+                size={20}
+                className="mt-0.5 shrink-0 text-red-400"
+              />
+
+              <div>
+                <p className="text-sm font-semibold text-red-300">
+                  No se pudieron cargar los datos
+                </p>
+
+                <p className="mt-1 text-xs text-red-400/80">
+                  {error}
+                </p>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* =================================================
+            TARJETAS PRINCIPALES
+        ================================================= */}
+
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+
+          <StatCard
+            title="Total de activos"
+            value={loading ? 0 : summary.totalAssets}
+            description="Activos registrados"
+            icon={Boxes}
+            variant="purple"
+            href="/equipment"
+          />
+
+          <StatCard
+            title="Equipos asignados"
+            value={loading ? 0 : summary.assigned}
+            description="Actualmente en uso"
+            icon={PackageCheck}
+            variant="blue"
+            href="/equipment"
+          />
+
+          <StatCard
+            title="Disponibles"
+            value={loading ? 0 : summary.available}
+            description="Listos para asignar"
+            icon={PackageOpen}
+            variant="green"
+            href="/equipment"
+          />
+
+          <StatCard
+            title="DaÃ±ados"
+            value={loading ? 0 : summary.damaged}
+            description="Requieren atenciÃ³n"
+            icon={CircleAlert}
+            variant="orange"
+            href="/maintenance"
+          />
+
+        </section>
+
+        {/* =================================================
+            GRÃFICOS
+        ================================================= */}
+
+        <section className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+
+          {/* EQUIPOS POR TIPO */}
+
+          <DashboardPanel
+            title="Equipos por tipo"
+            description="DistribuciÃ³n actual del inventario de equipos"
+            action={
+              <Link
+                href="/equipment"
+                className="
+                  flex items-center gap-1.5
+                  rounded-xl border border-white/[0.07]
+                  bg-white/[0.03]
+                  px-3 py-2
+                  text-xs font-medium text-slate-300
+                  transition
+                  hover:border-violet-500/30
+                  hover:bg-violet-500/10
+                  hover:text-white
+                "
+              >
+                Ver equipos
+                <ArrowRight size={14} />
+              </Link>
+            }
+          >
+
+            <div className="flex flex-col items-center gap-8 lg:flex-row">
+
+              {/* DONUT */}
+
+              <div className="relative shrink-0">
+
+                <div
+                  className="
+                    flex h-52 w-52
+                    items-center justify-center
+                    rounded-full
+                  "
+                  style={{
+                    background: donutGradient,
+                  }}
+                >
+                  <div
+                    className="
+                      flex h-32 w-32
+                      flex-col items-center justify-center
+                      rounded-full
+                      bg-[#11141f]
+                      shadow-inner
+                    "
+                  >
+                    <span className="text-3xl font-bold">
+                      {loading ? 0 : equipmentTotal}
+                    </span>
+
+                    <span className="mt-1 text-xs text-slate-500">
+                      Total
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_45px_rgba(139,92,246,0.16)]" />
+
+              </div>
+
+              {/* LEYENDA */}
+
+              <div className="w-full space-y-3">
+
+                {equipment.map((item) => {
+
+                  const percentage =
+                    equipmentTotal > 0
+                      ? Math.round(
+                          (item.value / equipmentTotal) * 100,
+                        )
+                      : 0
+
+                  return (
+                    <EquipmentLegend
+                      key={item.name}
+                      item={item}
+                      percentage={percentage}
+                      loading={loading}
+                    />
+                  )
+                })}
+
+              </div>
+
+            </div>
+
+          </DashboardPanel>
+
+          {/* ESTADO */}
+
+          <DashboardPanel
+            title="Estado de activos"
+            description="SituaciÃ³n actual de los equipos"
+          >
+
+            <div className="space-y-5">
+
+              {status.map((item) => {
+
+                const percentage =
+                  statusTotal > 0
+                    ? Math.round(
+                        (item.value / statusTotal) * 100,
+                      )
+                    : 0
+
+                return (
+                  <StatusRow
+                    key={item.name}
+                    item={item}
+                    percentage={percentage}
+                    loading={loading}
+                  />
+                )
+              })}
+
+            </div>
+
+          </DashboardPanel>
+
+        </section>
+
+        {/* =================================================
+            RESUMEN OPERATIVO
+        ================================================= */}
+
+        <section className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+
+          <QuickMetric
+            icon={Boxes}
+            title="Componentes en inventario"
+            value={inventoryData.totalUnits ?? 0}
+            description="Unidades totales"
+            variant="blue"
+            href="/inventory"
+          />
+
+          <QuickMetric
+            icon={PackageOpen}
+            title="Tipos de componentes"
+            value={inventoryData.componentTypes ?? 0}
+            description="Tipos registrados"
+            variant="purple"
+            href="/inventory"
+          />
+
+          <QuickMetric
+            icon={Users}
+            title="Usuarios"
+            value={summary.users}
+            description="Usuarios del sistema"
+            variant="orange"
+            href="/users"
+          />
+
+          <QuickMetric
+            icon={Activity}
+            title="Movimientos recientes"
+            value={recentMovements.length}
+            description="Registros recientes"
+            variant="green"
+            href="/movements"
+          />
+
+        </section>
+
+        {/* =================================================
+            ACTIVIDAD RECIENTE
+        ================================================= */}
+
+        <section className="mt-5">
+
+          <DashboardPanel
+            title="Actividad reciente"
+            description="Ãšltimos movimientos realizados en el sistema"
+            action={
+              <Link
+                href="/movements"
+                className="
+                  flex items-center gap-2
+                  rounded-xl
+                  border border-violet-500/20
+                  bg-violet-500/10
+                  px-3.5 py-2
+                  text-xs font-semibold
+                  text-violet-300
+                  transition
+                  hover:border-violet-500/40
+                  hover:bg-violet-500/20
+                  hover:text-white
+                "
+              >
+                Ver todos
+                <ArrowRight size={14} />
+              </Link>
+            }
+          >
+
+            {loading ? (
+              <ActivitySkeleton />
+            ) : recentMovements.length === 0 ? (
+              <EmptyActivity />
+            ) : (
+              <ActivityTable movements={recentMovements} />
+            )}
+
+          </DashboardPanel>
+
+        </section>
+
+      </div>
+    </div>
+  )
+}
+
+/* =========================================================
+   STAT CARD
+   ========================================================= */
+
+function StatCard({
+  title,
+  value,
+  description,
+  icon: Icon,
+  variant,
+  href,
+}: StatCardProps) {
+
+  const styles = {
+    purple: {
+      icon: 'bg-violet-500/10 text-violet-400',
+      glow: 'bg-violet-500/20',
+      border: 'hover:border-violet-500/30',
+      value: 'text-white',
+    },
+
+    blue: {
+      icon: 'bg-blue-500/10 text-blue-400',
+      glow: 'bg-blue-500/20',
+      border: 'hover:border-blue-500/30',
+      value: 'text-white',
+    },
+
+    green: {
+      icon: 'bg-emerald-500/10 text-emerald-400',
+      glow: 'bg-emerald-500/20',
+      border: 'hover:border-emerald-500/30',
+      value: 'text-white',
+    },
+
+    orange: {
+      icon: 'bg-orange-500/10 text-orange-400',
+      glow: 'bg-orange-500/20',
+      border: 'hover:border-orange-500/30',
+      value: 'text-white',
+    },
+  }
+
+  const style = styles[variant]
+
+  const content = (
+    <div
+      className={`
+        group relative min-h-[178px]
+        overflow-hidden rounded-2xl
+        border border-white/[0.07]
+        bg-[#11141f]
+        p-5
+        transition-all duration-300
+        hover:-translate-y-0.5
+        hover:shadow-2xl
+        ${style.border}
+      `}
+    >
+
+      {/* GLOW */}
+
+      <div
+        className={`
+          pointer-events-none
+          absolute -right-10 -top-10
+          h-32 w-32
+          rounded-full
+          blur-3xl
+          opacity-70
+          transition-opacity
+          group-hover:opacity-100
+          ${style.glow}
+        `}
+      />
+
+      {/* ICON */}
+
+      <div className="relative flex items-start justify-between">
+
+        <div
+          className={`
+            flex h-11 w-11
+            items-center justify-center
+            rounded-xl
+            ${style.icon}
+          `}
+        >
+          <Icon size={21} />
+        </div>
+
+        <ArrowRight
+          size={17}
+          className="
+            text-slate-700
+            transition
+            group-hover:translate-x-1
+            group-hover:text-slate-400
+          "
+        />
+
+      </div>
+
+      {/* CONTENT */}
+
+      <div className="relative mt-6">
+
+        <p className="text-sm text-slate-400">
+          {title}
+        </p>
+
+        <p className={`mt-1 text-3xl font-bold ${style.value}`}>
+          {formatNumber(value)}
+        </p>
+
+        <p className="mt-2 text-xs text-slate-600">
+          {description}
+        </p>
+
+      </div>
+
+    </div>
+  )
+
+  if (!href) {
+    return content
+  }
+
+  return (
+    <Link href={href} className="block">
+      {content}
+    </Link>
+  )
+}
+
+/* =========================================================
+   DASHBOARD PANEL
+   ========================================================= */
+
+function DashboardPanel({
+  title,
+  description,
+  children,
+  action,
+}: {
+  title: string
+  description: string
+  children: React.ReactNode
+  action?: React.ReactNode
+}) {
+
+  return (
+    <div
+      className="
+        overflow-hidden
+        rounded-2xl
+        border border-white/[0.07]
+        bg-[#11141f]
+        shadow-xl shadow-black/10
+      "
+    >
+
+      <div className="flex items-start justify-between gap-4 border-b border-white/[0.05] px-5 py-5 md:px-6">
+
+        <div>
+          <h2 className="text-sm font-semibold text-white md:text-base">
+            {title}
+          </h2>
+
+          <p className="mt-1 text-xs text-slate-500">
+            {description}
+          </p>
+        </div>
+
+        {action}
+
+      </div>
+
+      <div className="p-5 md:p-6">
+        {children}
+      </div>
+
+    </div>
+  )
+}
+
+/* =========================================================
+   EQUIPMENT LEGEND
+   ========================================================= */
+
+function EquipmentLegend({
+  item,
+  percentage,
+  loading,
+}: {
+  item: EquipmentItem
+  percentage: number
+  loading: boolean
+}) {
+
+  const variants = {
+    purple: 'bg-violet-500',
+    blue: 'bg-blue-500',
+    orange: 'bg-orange-500',
+    green: 'bg-emerald-500',
+  }
+
+  const iconVariants = {
+    purple: 'bg-violet-500/10 text-violet-400',
+    blue: 'bg-blue-500/10 text-blue-400',
+    orange: 'bg-orange-500/10 text-orange-400',
+    green: 'bg-emerald-500/10 text-emerald-400',
+  }
+
+  const Icon = item.icon
+
+  return (
+    <div
+      className="
+        rounded-xl
+        border border-white/[0.05]
+        bg-white/[0.015]
+        p-3
+      "
+    >
+
+      <div className="flex items-center gap-3">
+
+        <div
+          className={`
+            flex h-9 w-9 shrink-0
+            items-center justify-center
+            rounded-lg
+            ${iconVariants[item.variant]}
+          `}
+        >
+          <Icon size={17} />
+        </div>
+
+        <div className="min-w-0 flex-1">
+
+          <div className="flex items-center justify-between gap-3">
+
+            <span className="text-sm font-medium text-slate-300">
+              {item.name}
+            </span>
+
+            <div className="flex items-center gap-3">
+
+              <span className="text-sm font-bold text-white">
+                {loading ? 0 : item.value}
+              </span>
+
+              <span className="w-10 text-right text-xs text-slate-500">
+                {loading ? 0 : percentage}%
+              </span>
+
+            </div>
+
+          </div>
+
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+
+            <div
+              className={`
+                h-full rounded-full transition-all duration-700
+                ${variants[item.variant]}
+              `}
+              style={{
+                width: loading ? '0%' : `${percentage}%`,
+              }}
+            />
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  )
+}
+
+/* =========================================================
+   STATUS ROW
+   ========================================================= */
+
+function StatusRow({
+  item,
+  percentage,
+  loading,
+}: {
+  item: StatusItem
+  percentage: number
+  loading: boolean
+}) {
+
+  const styles = {
+    blue: {
+      icon: 'bg-blue-500/10 text-blue-400',
+      bar: 'bg-blue-500',
+    },
+
+    green: {
+      icon: 'bg-emerald-500/10 text-emerald-400',
+      bar: 'bg-emerald-500',
+    },
+
+    red: {
+      icon: 'bg-red-500/10 text-red-400',
+      bar: 'bg-red-500',
+    },
+
+    orange: {
+      icon: 'bg-orange-500/10 text-orange-400',
+      bar: 'bg-orange-500',
+    },
+  }
+
+  const style = styles[item.variant]
+  const Icon = item.icon
+
+  return (
+    <div>
+
+      <div className="mb-2 flex items-center gap-3">
+
+        <div
+          className={`
+            flex h-8 w-8
+            items-center justify-center
+            rounded-lg
+            ${style.icon}
+          `}
+        >
+          <Icon size={15} />
+        </div>
+
+        <div className="flex flex-1 items-center justify-between">
+
+          <span className="text-sm text-slate-400">
+            {item.name}
+          </span>
+
+          <div className="flex items-center gap-3">
+
+            <span className="text-sm font-semibold text-white">
+              {loading ? 0 : item.value}
+            </span>
+
+            <span className="w-9 text-right text-xs text-slate-600">
+              {loading ? 0 : `${percentage}%`}
+            </span>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <div className="ml-11 h-2 overflow-hidden rounded-full bg-white/[0.05]">
+
+        <div
+          className={`
+            h-full rounded-full
+            transition-all duration-700
+            ${style.bar}
+          `}
+          style={{
+            width: loading ? '0%' : `${percentage}%`,
+          }}
+        />
+
+      </div>
+
+    </div>
+  )
+}
+
+/* =========================================================
+   QUICK METRIC
+   ========================================================= */
+
+function QuickMetric({
+  icon: Icon,
+  title,
+  value,
+  description,
+  variant,
+  href,
+}: {
+  icon: LucideIcon
+  title: string
+  value: number
+  description: string
+  variant: 'purple' | 'blue' | 'orange' | 'green'
+  href: string
+}) {
+
+  const styles = {
+    purple: {
+      icon: 'bg-violet-500/10 text-violet-400',
+      glow: 'bg-violet-500/10',
+    },
+
+    blue: {
+      icon: 'bg-blue-500/10 text-blue-400',
+      glow: 'bg-blue-500/10',
+    },
+
+    orange: {
+      icon: 'bg-orange-500/10 text-orange-400',
+      glow: 'bg-orange-500/10',
+    },
+
+    green: {
+      icon: 'bg-emerald-500/10 text-emerald-400',
+      glow: 'bg-emerald-500/10',
+    },
+  }
+
+  const style = styles[variant]
+
+  return (
+    <Link
+      href={href}
+      className="
+        group relative
+        overflow-hidden
+        rounded-2xl
+        border border-white/[0.07]
+        bg-[#11141f]
+        p-5
+        transition-all duration-300
+        hover:-translate-y-0.5
+        hover:border-white/[0.13]
+      "
+    >
+
+      <div
+        className={`
+          pointer-events-none
+          absolute -right-8 -bottom-8
+          h-24 w-24
+          rounded-full
+          blur-3xl
+          ${style.glow}
+        `}
+      />
+
+      <div className="relative flex items-center gap-4">
+
+        <div
+          className={`
+            flex h-11 w-11
+            shrink-0 items-center justify-center
+            rounded-xl
+            ${style.icon}
+          `}
+        >
+          <Icon size={20} />
+        </div>
+
+        <div className="min-w-0 flex-1">
+
+          <p className="truncate text-xs text-slate-500">
+            {title}
+          </p>
+
+          <p className="mt-1 text-2xl font-bold">
+            {formatNumber(value)}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-600">
+            {description}
+          </p>
+
+        </div>
+
+        <ArrowRight
+          size={17}
+          className="
+            text-slate-700
+            transition
+            group-hover:translate-x-1
+            group-hover:text-slate-400
+          "
+        />
+
+      </div>
+
+    </Link>
+  )
+}
+
+/* =========================================================
+   ACTIVIDAD
+   ========================================================= */
+
+function ActivityTable({
+  movements,
+}: {
+  movements: RecentMovement[]
+}) {
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-white/[0.06]">
+
+      {/* DESKTOP */}
+
+      <div className="hidden overflow-x-auto md:block">
+
+        <table className="w-full min-w-[900px] border-collapse">
+
+          <thead>
+            <tr className="border-b border-white/[0.06] bg-white/[0.025]">
+
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                Fecha
+              </th>
+
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                Equipo
+              </th>
+
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                AcciÃ³n
+              </th>
+
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                Usuario
+              </th>
+
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                UbicaciÃ³n
+              </th>
+
+            </tr>
+          </thead>
+
+          <tbody>
+
+            {movements.slice(0, 8).map((movement, index) => {
+
+              const equipmentName =
+                movement.equipment?.model ||
+                movement.equipment?.assetTag ||
+                movement.equipment?.serialNumber ||
+                'Equipo'
+
+              const equipmentType =
+                movement.equipment?.category ||
+                'Activo'
+
+              const location =
+                movement.toLocation ||
+                movement.fromLocation ||
+                'â€”'
+
+              return (
+                <tr
+                  key={movement.id || `${equipmentName}-${index}`}
+                  className="
+                    border-b border-white/[0.04]
+                    last:border-b-0
+                    transition
+                    hover:bg-white/[0.02]
+                  "
+                >
+
+                  <td className="whitespace-nowrap px-4 py-4">
+
+                    <div className="flex items-center gap-2 text-xs text-slate-400">
+
+                      <Clock3
+                        size={14}
+                        className="text-slate-600"
+                      />
+
+                      {formatDateTime(movement.createdAt)}
+
+                    </div>
+
+                  </td>
+
+                  <td className="px-4 py-4">
+
+                    <div className="flex items-center gap-3">
+
+                      <div
+                        className="
+                          flex h-9 w-9 shrink-0
+                          items-center justify-center
+                          rounded-lg
+                          bg-violet-500/10
+                          text-violet-400
+                        "
+                      >
+                        <Laptop size={17} />
+                      </div>
+
+                      <div className="min-w-0">
+
+                        <p className="truncate text-sm font-medium text-white">
+                          {equipmentName}
+                        </p>
+
+                        <p className="mt-0.5 text-xs text-slate-600">
+                          {equipmentType}
+                          {movement.equipment?.brand
+                            ? ` Â· ${movement.equipment.brand}`
+                            : ''}
+                        </p>
+
+                      </div>
+
+                    </div>
+
+                  </td>
+
+                  <td className="px-4 py-4">
+
+                    <span
+                      className={`
+                        inline-flex
+                        rounded-full
+                        border
+                        px-2.5 py-1
+                        text-[10px]
+                        font-bold
+                        tracking-wide
+                        ${getActionClasses(movement.action)}
+                      `}
+                    >
+                      {formatAction(movement.action)}
+                    </span>
+
+                  </td>
+
+                  <td className="px-4 py-4">
+
+                    <span className="text-sm text-slate-400">
+                      {movement.assignedUser || 'â€”'}
+                    </span>
+
+                  </td>
+
+                  <td className="px-4 py-4">
+
+                    <div className="flex items-center gap-2 text-sm text-slate-400">
+
+                      <MapPin
+                        size={15}
+                        className="shrink-0 text-blue-400"
+                      />
+
+                      <span className="max-w-[220px] truncate">
+                        {location}
+                      </span>
+
+                    </div>
+
+                  </td>
+
+                </tr>
+              )
+            })}
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+      {/* MOBILE */}
+
+      <div className="divide-y divide-white/[0.05] md:hidden">
+
+        {movements.slice(0, 8).map((movement, index) => {
+
+          const equipmentName =
+            movement.equipment?.model ||
+            movement.equipment?.assetTag ||
+            'Equipo'
+
+          const location =
+            movement.toLocation ||
+            movement.fromLocation ||
+            'â€”'
+
+          return (
+            <div
+              key={movement.id || `${equipmentName}-${index}`}
+              className="p-4"
+            >
+
+              <div className="flex items-start justify-between gap-3">
+
+                <div className="flex min-w-0 items-center gap-3">
+
+                  <div
+                    className="
+                      flex h-10 w-10 shrink-0
+                      items-center justify-center
+                      rounded-xl
+                      bg-violet-500/10
+                      text-violet-400
+                    "
+                  >
+                    <Laptop size={18} />
+                  </div>
+
+                  <div className="min-w-0">
+
+                    <p className="truncate text-sm font-semibold">
+                      {equipmentName}
+                    </p>
+
+                    <p className="mt-1 truncate text-xs text-slate-600">
+                      {movement.equipment?.category || 'Activo'}
+                    </p>
+
+                  </div>
+
+                </div>
+
+                <span
+                  className={`
+                    shrink-0
+                    rounded-full
+                    border
+                    px-2 py-1
+                    text-[9px]
+                    font-bold
+                    ${getActionClasses(movement.action)}
+                  `}
+                >
+                  {formatAction(movement.action)}
+                </span>
+
+              </div>
+
+              <div className="mt-4 space-y-2 text-xs">
+
+                <div className="flex items-center gap-2 text-slate-500">
+
+                  <Clock3 size={13} />
+
+                  {formatDateTime(movement.createdAt)}
+
+                </div>
+
+                <div className="flex items-center gap-2 text-slate-500">
+
+                  <MapPin size={13} />
+
+                  <span className="truncate">
+                    {location}
+                  </span>
+
+                </div>
+
+                {movement.assignedUser && (
+                  <div className="flex items-center gap-2 text-slate-500">
+
+                    <Users size={13} />
+
+                    {movement.assignedUser}
+
+                  </div>
+                )}
+
+              </div>
+
+            </div>
+          )
+        })}
+
+      </div>
+
+    </div>
+  )
+}
+
+/* =========================================================
+   ACTIVIDAD VACÃA
+   ========================================================= */
+
+function EmptyActivity() {
+
+  return (
+    <div
+      className="
+        flex min-h-[230px]
+        flex-col items-center justify-center
+        rounded-xl
+        border border-dashed
+        border-white/[0.08]
+        bg-white/[0.015]
+        px-6 text-center
+      "
+    >
+
+      <div
+        className="
+          flex h-14 w-14
+          items-center justify-center
+          rounded-2xl
+          bg-violet-500/10
+          text-violet-400
+        "
+      >
+        <Activity size={25} />
+      </div>
+
+      <p className="mt-4 text-sm font-medium text-slate-300">
+        No hay movimientos recientes
+      </p>
+
+      <p className="mt-1 max-w-sm text-xs leading-5 text-slate-600">
+        Cuando se registre una entrada, asignaciÃ³n, devoluciÃ³n,
+        traslado o reparaciÃ³n, aparecerÃ¡ aquÃ­.
+      </p>
+
+      <Link
+        href="/movements"
+        className="
+          mt-5 flex items-center gap-2
+          rounded-xl
+          border border-white/[0.07]
+          bg-white/[0.03]
+          px-4 py-2
+          text-xs font-semibold
+          text-slate-300
+          transition
+          hover:bg-white/[0.06]
+          hover:text-white
+        "
+      >
+        Ir a movimientos
+        <ArrowRight size={14} />
+      </Link>
+
+    </div>
+  )
+}
+
+/* =========================================================
+   LOADING
+   ========================================================= */
+
+function ActivitySkeleton() {
+
+  return (
+    <div className="space-y-3">
+
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div
+          key={index}
+          className="
+            h-16
+            animate-pulse
+            rounded-xl
+            bg-white/[0.03]
+          "
+        />
+      ))}
+
+    </div>
+  )
+}

@@ -1,0 +1,601 @@
+﻿import { apiRequest } from "@/lib/api";
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  Clock,
+  Database,
+  History,
+  Shield,
+  User,
+  X,
+} from "lucide-react";
+
+type HistoryItem = {
+  id: string;
+  type: string;
+  action: string;
+  description: string;
+  createdAt: string;
+
+  equipment?: {
+    id: string;
+    category?: string | null;
+    brand?: string | null;
+    model?: string | null;
+    serial?: string | null;
+    assetTag?: string | null;
+  } | null;
+
+  component?: {
+    id: string;
+    type?: string | null;
+    brand?: string | null;
+  } | null;
+
+  fromLocation?: string | null;
+  toLocation?: string | null;
+
+  quantity?: number | null;
+  previousQuantity?: number | null;
+  newQuantity?: number | null;
+
+  priority?: string | null;
+  damageType?: string | null;
+
+  user?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  } | null;
+
+  ipAddress?: string | null;
+};
+const TYPE_LABELS: Record<string, string> = {
+  EQUIPMENT_MOVEMENT: "Movimiento de equipo",
+  DAMAGE: "DaÃ±o",
+  INVENTORY_MOVEMENT: "Movimiento de inventario",
+  SECURITY: "Seguridad",
+};
+
+export default function HistoryPage() {
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [typeFilter, setTypeFilter] = useState("ALL");
+  const [selectedItem, setSelectedItem] =
+    useState<HistoryItem | null>(null);
+
+  useEffect(() => {
+    async function loadHistory() {
+      try {
+        setLoading(true);
+        setError("");
+
+        const response = await apiRequest(`/history`);
+
+        if (!response.ok) {
+          throw new Error("No se pudo cargar el historial");
+        }
+
+        const result = await response.json();
+
+        setHistory(
+          Array.isArray(result?.data)
+            ? result.data
+            : [],
+        );
+      } catch (err) {
+        console.error(err);
+        setError(
+          "No fue posible conectar con el servidor.",
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadHistory();
+  }, []);
+
+  const filteredHistory = useMemo(() => {
+    if (typeFilter === "ALL") {
+      return history;
+    }
+
+    return history.filter(
+      (item) => item.type === typeFilter,
+    );
+  }, [history, typeFilter]);
+
+  const counts = useMemo(() => {
+    return {
+      total: history.length,
+      equipment: history.filter(
+        (item) =>
+          item.type === "EQUIPMENT_MOVEMENT",
+      ).length,
+      damage: history.filter(
+        (item) => item.type === "DAMAGE",
+      ).length,
+      inventory: history.filter(
+        (item) =>
+          item.type === "INVENTORY_MOVEMENT",
+      ).length,
+      security: history.filter(
+        (item) => item.type === "SECURITY",
+      ).length,
+    };
+  }, [history]);
+
+  return (
+    <div className="space-y-6">
+
+      {/* HEADER */}
+
+      <div>
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-300 ring-1 ring-violet-400/10">
+            <History size={21} />
+          </div>
+
+          <div>
+            <h1 className="text-2xl font-bold text-white">
+              Historial
+            </h1>
+
+            <p className="mt-1 text-sm text-slate-400">
+              Registro de movimientos, daÃ±os, inventario y seguridad.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* SUMMARY */}
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+
+        <SummaryCard
+          icon={Activity}
+          label="Total eventos"
+          value={counts.total}
+        />
+
+        <SummaryCard
+          icon={Database}
+          label="Equipos"
+          value={counts.equipment}
+        />
+
+        <SummaryCard
+          icon={AlertTriangle}
+          label="DaÃ±os"
+          value={counts.damage}
+        />
+
+        <SummaryCard
+          icon={ArrowRight}
+          label="Inventario"
+          value={counts.inventory}
+        />
+
+        <SummaryCard
+          icon={Shield}
+          label="Seguridad"
+          value={counts.security}
+        />
+
+      </div>
+
+      {/* FILTERS */}
+
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/[0.06] bg-[#0b1424] p-3">
+
+        {[
+          ["ALL", "Todos"],
+          ["EQUIPMENT_MOVEMENT", "Equipos"],
+          ["DAMAGE", "DaÃ±os"],
+          ["INVENTORY_MOVEMENT", "Inventario"],
+          ["SECURITY", "Seguridad"],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setTypeFilter(value)}
+            className={`rounded-xl px-4 py-2 text-xs font-semibold transition ${
+              typeFilter === value
+                ? "bg-violet-500/15 text-violet-300 ring-1 ring-violet-400/20"
+                : "text-slate-500 hover:bg-white/[0.04] hover:text-slate-300"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+
+      </div>
+
+      {/* HISTORY */}
+
+      <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0b1424]">
+
+        {loading ? (
+          <div className="p-12 text-center text-sm text-slate-400">
+            Cargando historial...
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center text-sm text-red-400">
+            {error}
+          </div>
+        ) : filteredHistory.length === 0 ? (
+          <div className="p-12 text-center">
+
+            <History
+              size={30}
+              className="mx-auto text-slate-600"
+            />
+
+            <p className="mt-3 text-sm font-medium text-slate-300">
+              No hay eventos registrados
+            </p>
+
+            <p className="mt-1 text-xs text-slate-600">
+              Los movimientos aparecerÃ¡n aquÃ­ automÃ¡ticamente.
+            </p>
+
+          </div>
+        ) : (
+          <div className="divide-y divide-white/[0.04]">
+
+            {filteredHistory.map((item) => (
+              <button
+                key={`${item.type}-${item.id}`}
+                type="button"
+                onClick={() => setSelectedItem(item)}
+                className="group flex w-full items-center gap-4 px-5 py-4 text-left transition hover:bg-violet-500/[0.025]"
+              >
+
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.035] text-violet-300 ring-1 ring-white/[0.05]">
+                  {getTypeIcon(item.type)}
+                </div>
+
+                <div className="min-w-0 flex-1">
+
+                  <div className="flex flex-wrap items-center gap-2">
+
+                    <span className="text-sm font-semibold text-white">
+                      {TYPE_LABELS[item.type] ??
+                        item.type}
+                    </span>
+
+                    <span className="rounded-md bg-white/[0.04] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      {item.action}
+                    </span>
+
+                  </div>
+
+                  <p className="mt-1 truncate text-xs text-slate-400">
+                    {item.description}
+                  </p>
+
+                </div>
+
+                <div className="hidden text-right sm:block">
+
+                  <div className="flex items-center justify-end gap-1.5 text-xs text-slate-500">
+                    <Clock size={12} />
+                    {formatDate(item.createdAt)}
+                  </div>
+
+                  {getActorName(item) && (
+                    <div className="mt-1 flex items-center justify-end gap-1.5 text-xs text-slate-600">
+                      <User size={11} />
+                      {getActorName(item)}
+                    </div>
+                  )}
+
+                </div>
+
+                <ArrowRight
+                  size={16}
+                  className="shrink-0 text-slate-700 transition group-hover:translate-x-0.5 group-hover:text-violet-400"
+                />
+
+              </button>
+            ))}
+
+          </div>
+        )}
+
+      </div>
+
+      {/* DETAIL DRAWER */}
+
+      {selectedItem && (
+        <HistoryDrawer
+          item={selectedItem}
+          onClose={() => setSelectedItem(null)}
+        />
+      )}
+
+    </div>
+  );
+}
+
+function SummaryCard({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/[0.06] bg-[#0b1424] p-5">
+      <div className="flex items-center justify-between">
+
+        <div>
+          <p className="text-xs font-medium text-slate-500">
+            {label}
+          </p>
+
+          <p className="mt-2 text-2xl font-bold text-white">
+            {value}
+          </p>
+        </div>
+
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
+          <Icon size={18} />
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+function HistoryDrawer({
+  item,
+  onClose,
+}: {
+  item: HistoryItem;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[100]">
+
+      <button
+        type="button"
+        aria-label="Cerrar"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+      />
+
+      <aside className="absolute right-0 top-0 h-full w-full max-w-xl overflow-y-auto border-l border-white/[0.08] bg-[#09111f] shadow-2xl shadow-black/50">
+
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/[0.06] bg-[#09111f]/95 px-6 py-5 backdrop-blur">
+
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-violet-400">
+              Detalle del evento
+            </p>
+
+            <h2 className="mt-1 text-lg font-semibold text-white">
+              {TYPE_LABELS[item.type] ??
+                item.type}
+            </h2>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl p-2 text-slate-500 transition hover:bg-white/[0.05] hover:text-white"
+          >
+            <X size={18} />
+          </button>
+
+        </div>
+
+        <div className="space-y-6 p-6">
+
+          <section className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-5">
+
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Evento
+            </p>
+
+            <p className="mt-2 text-sm font-semibold text-white">
+              {item.description}
+            </p>
+
+            <div className="mt-4 grid grid-cols-2 gap-4">
+
+              <Detail label="Tipo" value={item.type} />
+
+              <Detail
+                label="AcciÃ³n"
+                value={item.action}
+              />
+
+              <Detail
+                label="Fecha"
+                value={formatDate(item.createdAt)}
+              />
+
+              <Detail
+                label="ID"
+                value={item.id}
+              />
+
+            </div>
+
+          </section>
+
+          {item.equipment && (
+            <section className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-5">
+
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Equipo
+              </p>
+
+              <div className="mt-4 space-y-3">
+
+                <Detail
+                  label="CategorÃ­a"
+                  value={item.equipment.category}
+                />
+
+                <Detail
+                  label="Marca"
+                  value={item.equipment.brand}
+                />
+
+                <Detail
+                  label="Modelo"
+                  value={item.equipment.model}
+                />
+
+                <Detail
+                  label="Asset Tag"
+                  value={item.equipment.assetTag}
+                />
+
+                <Detail
+                  label="Serial"
+                  value={item.equipment.serial}
+                />
+
+              </div>
+
+            </section>
+          )}
+
+          {item.component && (
+            <section className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-5">
+
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Componente
+              </p>
+
+              <div className="mt-4 space-y-3">
+
+                <Detail
+                  label="Tipo"
+                  value={item.component.type}
+                />
+
+                <Detail
+                  label="Marca"
+                  value={item.component.brand}
+                />
+
+                <Detail
+                  label="Cantidad"
+                  value={item.quantity}
+                />
+
+              </div>
+
+            </section>
+          )}
+
+          {item.user && (
+            <section className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-5">
+
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Usuario relacionado
+              </p>
+
+              <div className="mt-4">
+
+                <p className="font-semibold text-white">
+                  {item.user.firstName}{" "}
+                  {item.user.lastName}
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  {item.user.email ?? "Sin correo"}
+                </p>
+
+              </div>
+
+            </section>
+          )}
+
+          {item.ipAddress && (
+            <Detail
+              label="IP"
+              value={item.ipAddress}
+            />
+          )}
+
+        </div>
+
+      </aside>
+
+    </div>
+  );
+}
+
+function Detail({
+  label,
+  value,
+}: {
+  label: string;
+  value?: unknown;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+        {label}
+      </p>
+
+      <p className="mt-1 break-words text-sm text-slate-300">
+        {value === null ||
+        value === undefined ||
+        value === ""
+          ? "â€”"
+          : String(value)}
+      </p>
+    </div>
+  );
+}
+
+function getTypeIcon(type: string) {
+  switch (type) {
+    case "DAMAGE":
+      return <AlertTriangle size={17} />;
+
+    case "SECURITY":
+      return <Shield size={17} />;
+
+    case "INVENTORY_MOVEMENT":
+      return <ArrowRight size={17} />;
+
+    default:
+      return <Database size={17} />;
+  }
+}
+
+function getActorName(item: HistoryItem) {
+  if (!item.user) {
+    return "";
+  }
+
+  return `${item.user.firstName ?? ""} ${
+    item.user.lastName ?? ""
+  }`.trim();
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleString(
+    "es-DO",
+    {
+      dateStyle: "medium",
+      timeStyle: "short",
+    },
+  );
+}

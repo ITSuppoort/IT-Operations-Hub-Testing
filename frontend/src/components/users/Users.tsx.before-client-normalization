@@ -1,0 +1,1534 @@
+﻿import { apiRequest } from "@/lib/api";
+"use client";
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
+import {
+  Download,
+  FileSpreadsheet,
+  Filter,
+  Plus,
+  Search,
+  Upload,
+  Users as UsersIcon,
+  UserCheck,
+  UserX,
+  X,
+} from "lucide-react";
+
+import * as XLSX from "xlsx";
+
+type InventoryPerson = {
+  id: string;
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  email?: string | null;
+  phone?: string | null;
+  jobTitle?: string | null;
+  status: string;
+  departmentId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  department?: {
+    id: string;
+    name: string;
+  } | null;
+  position?: unknown;
+  equipment?: unknown[];
+};
+
+type ImportRow = {
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  email?: string;
+  phone?: string;
+  jobTitle?: string;
+  status?: string;
+  department?: string;
+};
+export default function Users() {
+  const [users, setUsers] = useState<InventoryPerson[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [departmentFilter, setDepartmentFilter] = useState("ALL");
+
+  const [selectedUser, setSelectedUser] =
+    useState<InventoryPerson | null>(null);
+
+  const [showCreate, setShowCreate] = useState(false);
+
+  const [newUser, setNewUser] = useState({
+    employeeId: "",
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    jobTitle: "",
+    status: "ACTIVE",
+  });
+
+  const [importRows, setImportRows] = useState<ImportRow[]>([]);
+  const [showImport, setShowImport] = useState(false);
+  const [importing, setImporting] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadUsers = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await apiRequest(`/inventory-people`);
+
+      if (!response.ok) {
+        throw new Error("No se pudieron cargar los usuarios.");
+      }
+
+      const data = await response.json();
+
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+      setError("No fue posible conectar con el servidor.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
+
+  const departments = useMemo(() => {
+    const values = users
+      .map((user) => user.department?.name)
+      .filter(Boolean) as string[];
+
+    return [...new Set(values)].sort();
+  }, [users]);
+
+  const filteredUsers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return users.filter((user) => {
+      const matchesSearch =
+        !query ||
+        `${user.firstName} ${user.lastName}`
+          .toLowerCase()
+          .includes(query) ||
+        user.employeeId.toLowerCase().includes(query) ||
+        (user.email ?? "").toLowerCase().includes(query) ||
+        (user.jobTitle ?? "").toLowerCase().includes(query);
+
+      const matchesStatus =
+        statusFilter === "ALL" ||
+        user.status.toUpperCase() === statusFilter;
+
+      const matchesDepartment =
+        departmentFilter === "ALL" ||
+        user.department?.name === departmentFilter;
+
+      return (
+        matchesSearch &&
+        matchesStatus &&
+        matchesDepartment
+      );
+    });
+  }, [
+    users,
+    search,
+    statusFilter,
+    departmentFilter,
+  ]);
+
+  const activeUsers = users.filter(
+    (user) => user.status.toUpperCase() === "ACTIVE",
+  ).length;
+
+  const inactiveUsers = users.filter(
+    (user) => user.status.toUpperCase() !== "ACTIVE",
+  ).length;
+
+  const exportExcel = () => {
+    const rows = users.map((user) => ({
+      "Employee ID": user.employeeId,
+      Nombre: user.firstName,
+      Apellido: user.lastName,
+      "Nombre completo": `${user.firstName} ${user.lastName}`,
+      Correo: user.email ?? "",
+      Teléfono: user.phone ?? "",
+      Cargo: user.jobTitle ?? "",
+      Departamento: user.department?.name ?? "",
+      Estado: user.status,
+      "Fecha creaciÃ³n": user.createdAt,
+      "Ãšltima actualizaciÃ³n": user.updatedAt,
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      "Usuarios",
+    );
+
+    XLSX.writeFile(
+      workbook,
+      `IT-Operations-Roster-${new Date()
+        .toISOString()
+        .slice(0, 10)}.xlsx`,
+    );
+  };
+
+  const handleImportFile = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    try {
+      const buffer = await file.arrayBuffer();
+
+      const workbook = XLSX.read(buffer, {
+        type: "array",
+      });
+
+      const firstSheet = workbook.Sheets[
+        workbook.SheetNames[0]
+      ];
+
+      const rows = XLSX.utils.sheet_to_json<
+        Record<string, unknown>
+      >(firstSheet, {
+        defval: "",
+      });
+
+      const normalized: ImportRow[] = rows
+        .map((row) => ({
+          employeeId: String(
+            row["Employee ID"] ??
+              row["employeeId"] ??
+              row["ID"] ??
+              "",
+          ).trim(),
+
+          firstName: String(
+            row["Nombre"] ??
+              row["firstName"] ??
+              "",
+          ).trim(),
+
+          lastName: String(
+            row["Apellido"] ??
+              row["lastName"] ??
+              "",
+          ).trim(),
+
+          email: String(
+            row["Correo"] ??
+              row["email"] ??
+              "",
+          ).trim(),
+
+          phone: String(
+            row["Teléfono"] ??
+              row["phone"] ??
+              "",
+          ).trim(),
+
+          jobTitle: String(
+            row["Cargo"] ??
+              row["jobTitle"] ??
+              "",
+          ).trim(),
+
+          status:
+            String(
+              row["Estado"] ??
+                row["status"] ??
+                "ACTIVE",
+            ).trim() || "ACTIVE",
+
+          department: String(
+            row["Departamento"] ??
+              row["department"] ??
+              "",
+          ).trim(),
+        }))
+        .filter(
+          (row) =>
+            row.employeeId &&
+            row.firstName &&
+            row.lastName,
+        );
+
+      setImportRows(normalized);
+      setShowImport(true);
+    } catch (err) {
+      console.error(err);
+      alert(
+        "No fue posible leer el archivo Excel.",
+      );
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const confirmImport = async () => {
+    if (!importRows.length) return;
+
+    try {
+      setImporting(true);
+
+      let created = 0;
+      let skipped = 0;
+
+      for (const row of importRows) {
+        const exists = users.some(
+          (user) =>
+            user.employeeId.toLowerCase() ===
+            row.employeeId.toLowerCase(),
+        );
+
+        if (exists) {
+          skipped++;
+          continue;
+        }
+
+        const response = await apiRequest(
+          `/inventory-people`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              employeeId: row.employeeId,
+              firstName: row.firstName,
+              lastName: row.lastName,
+              email: row.email || undefined,
+              phone: row.phone || undefined,
+              jobTitle:
+                row.jobTitle || undefined,
+              status:
+                row.status || "ACTIVE",
+            }),
+          },
+        );
+
+        if (response.ok) {
+          created++;
+        }
+      }
+
+      setShowImport(false);
+      setImportRows([]);
+
+      await loadUsers();
+
+      alert(
+        `ImportaciÃ³n completada.\n\nCreados: ${created}\nExistentes omitidos: ${skipped}`,
+      );
+    } catch (err) {
+      console.error(err);
+      alert(
+        "La importaciÃ³n encontrÃ³ un error.",
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const createUser = async () => {
+    if (
+      !newUser.employeeId ||
+      !newUser.firstName ||
+      !newUser.lastName
+    ) {
+      alert(
+        "Employee ID, nombre y apellido son obligatorios.",
+      );
+      return;
+    }
+
+    try {
+      const response = await apiRequest(
+        `/inventory-people`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify(newUser),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          "No se pudo crear el usuario.",
+        );
+      }
+
+      setShowCreate(false);
+
+      setNewUser({
+        employeeId: "",
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        jobTitle: "",
+        status: "ACTIVE",
+      });
+
+      await loadUsers();
+    } catch (err) {
+      console.error(err);
+      alert(
+        "No fue posible crear el usuario.",
+      );
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+
+      {/* HEADER */}
+
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
+        <div>
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-400 ring-1 ring-violet-400/20">
+              <UsersIcon size={21} />
+            </div>
+
+            <div>
+              <h1 className="text-2xl font-bold text-white">
+                Usuarios
+              </h1>
+
+              <p className="mt-1 text-sm text-slate-400">
+                Personas, asignaciones y trazabilidad de activos
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            onChange={handleImportFile}
+            className="hidden"
+          />
+
+          <button
+            type="button"
+            onClick={() =>
+              fileInputRef.current?.click()
+            }
+            className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.07]"
+          >
+            <Upload size={16} />
+            Importar
+          </button>
+
+          <button
+            type="button"
+            onClick={exportExcel}
+            className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-2.5 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
+          >
+            <Download size={16} />
+            Exportar Excel
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-600/20 transition hover:bg-violet-500"
+          >
+            <Plus size={16} />
+            Nuevo usuario
+          </button>
+
+        </div>
+      </div>
+
+      {/* KPI */}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+
+        <StatCard
+          icon={UsersIcon}
+          label="Total personas"
+          value={users.length}
+          description="Registradas en inventario"
+        />
+
+        <StatCard
+          icon={UserCheck}
+          label="Activos"
+          value={activeUsers}
+          description="Personas actualmente activas"
+          positive
+        />
+
+        <StatCard
+          icon={UserX}
+          label="Inactivos"
+          value={inactiveUsers}
+          description="Requieren revisiï¿½n"
+        />
+
+      </div>
+
+      {/* FILTER BAR */}
+
+      <div className="rounded-2xl border border-white/[0.07] bg-[#0b1424] p-4">
+
+        <div className="flex flex-col gap-3 xl:flex-row">
+
+          <div className="relative flex-1">
+            <Search
+              size={17}
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
+            />
+
+            <input
+              value={search}
+              onChange={(event) =>
+                setSearch(event.target.value)
+              }
+              placeholder="Buscar por nombre, employee ID, correo o cargo..."
+              className="h-11 w-full rounded-xl border border-white/[0.07] bg-white/[0.025] pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-violet-400/40"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Filter
+              size={16}
+              className="text-slate-500"
+            />
+
+            <select
+              value={statusFilter}
+              onChange={(event) =>
+                setStatusFilter(event.target.value)
+              }
+              className="h-11 rounded-xl border border-white/[0.07] bg-[#101827] px-3 text-sm text-slate-300 outline-none"
+            >
+              <option value="ALL">
+                Todos los estados
+              </option>
+              <option value="ACTIVE">
+                Activos
+              </option>
+              <option value="INACTIVE">
+                Inactivos
+              </option>
+            </select>
+
+            <select
+              value={departmentFilter}
+              onChange={(event) =>
+                setDepartmentFilter(
+                  event.target.value,
+                )
+              }
+              className="h-11 rounded-xl border border-white/[0.07] bg-[#101827] px-3 text-sm text-slate-300 outline-none"
+            >
+              <option value="ALL">
+                Todos los departamentos
+              </option>
+
+              {departments.map(
+                (department) => (
+                  <option
+                    key={department}
+                    value={department}
+                  >
+                    {department}
+                  </option>
+                ),
+              )}
+            </select>
+          </div>
+
+        </div>
+      </div>
+
+      {/* TABLE */}
+
+      <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0b1424] shadow-2xl shadow-black/20">
+
+        {loading ? (
+          <div className="p-12 text-center text-sm text-slate-400">
+            Cargando informaciÃ³n...
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center text-sm text-red-400">
+            {error}
+          </div>
+        ) : filteredUsers.length === 0 ? (
+          <div className="p-12 text-center">
+            <UsersIcon
+              size={28}
+              className="mx-auto text-slate-600"
+            />
+
+            <p className="mt-3 text-sm font-medium text-slate-300">
+              No encontramos personas
+            </p>
+
+            <p className="mt-1 text-xs text-slate-600">
+              Cambia los filtros o importa un archivo.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+
+            <table className="w-full text-left">
+
+              <thead className="border-b border-white/[0.06] bg-white/[0.02]">
+
+                <tr>
+                  <HeaderCell>
+                    Empleado
+                  </HeaderCell>
+
+                  <HeaderCell>
+                    Persona
+                  </HeaderCell>
+
+                  <HeaderCell>
+                    Departamento
+                  </HeaderCell>
+
+                  <HeaderCell>
+                    Cargo
+                  </HeaderCell>
+
+                  <HeaderCell>
+                    Equipos
+                  </HeaderCell>
+
+                  <HeaderCell>
+                    Estado
+                  </HeaderCell>
+                </tr>
+
+              </thead>
+
+              <tbody>
+
+                {filteredUsers.map(
+                  (user) => (
+                    <tr
+                      key={user.id}
+                      onClick={() => {
+                        setSelectedUser(user);
+                      }}
+                      className="group cursor-pointer border-b border-white/[0.04] transition hover:bg-violet-500/[0.025]"
+                    >
+
+                      <td className="px-5 py-4">
+                        <span className="rounded-lg border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 font-mono text-xs text-violet-300">
+                          {user.employeeId}
+                        </span>
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+
+                          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/10 text-xs font-bold text-violet-300 ring-1 ring-violet-400/10">
+                            {user.firstName[0]}
+                            {user.lastName[0]}
+                          </div>
+
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              {user.firstName}{" "}
+                              {user.lastName}
+                            </p>
+
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              {user.email || "Sin correo"}
+                            </p>
+                          </div>
+
+                        </div>
+                      </td>
+
+                      <td className="px-5 py-4 text-sm text-slate-300">
+                        {user.department?.name ||
+                          "Sin departamento"}
+                      </td>
+
+                      <td className="px-5 py-4 text-sm text-slate-300">
+                        {user.jobTitle || "Sin cargo"}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <span className="rounded-lg bg-white/[0.04] px-2.5 py-1 text-xs text-slate-300">
+                          {Array.isArray(
+                            user.equipment,
+                          )
+                            ? user.equipment.length
+                            : 0}
+                        </span>
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <span
+                          className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                            user.status.toUpperCase() ===
+                            "ACTIVE"
+                              ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+                              : "border-red-400/20 bg-red-400/10 text-red-300"
+                          }`}
+                        >
+                          {user.status}
+                        </span>
+                      </td>
+
+                    </tr>
+                  ),
+                )}
+
+              </tbody>
+            </table>
+
+          </div>
+        )}
+
+      </div>
+
+      {/* =====================================================
+          USER QUICK VIEW DRAWER
+          ===================================================== */}
+
+      {selectedUser && (
+        <>
+          {/* BACKDROP */}
+
+          <div
+            className="fixed inset-0 z-[90] bg-black/50 backdrop-blur-[2px]"
+            onClick={() => setSelectedUser(null)}
+          />
+
+          {/* DRAWER */}
+
+          <aside
+            className="
+              fixed
+              right-0
+              top-0
+              z-[100]
+              flex
+              h-screen
+              w-full
+              max-w-[460px]
+              flex-col
+              border-l
+              border-white/[0.08]
+              bg-[#08111f]
+              shadow-2xl
+              shadow-black/60
+            "
+          >
+
+            {/* HEADER */}
+
+            <div
+              className="
+                flex
+                items-start
+                justify-between
+                border-b
+                border-white/[0.07]
+                px-6
+                py-5
+              "
+            >
+
+              <div className="flex items-center gap-3">
+
+                <div
+                  className="
+                    flex
+                    h-12
+                    w-12
+                    items-center
+                    justify-center
+                    rounded-2xl
+                    bg-violet-500/15
+                    text-sm
+                    font-bold
+                    text-violet-300
+                    ring-1
+                    ring-violet-400/20
+                  "
+                >
+                  {selectedUser.firstName?.[0]}
+                  {selectedUser.lastName?.[0]}
+                </div>
+
+                <div>
+
+                  <div className="flex items-center gap-2">
+
+                    <h2 className="text-lg font-bold text-white">
+                      {selectedUser.firstName}{" "}
+                      {selectedUser.lastName}
+                    </h2>
+
+                    <span
+                      className={`
+                        rounded-full
+                        border
+                        px-2
+                        py-0.5
+                        text-[9px]
+                        font-bold
+                        uppercase
+                        tracking-wider
+                        ${
+                          selectedUser.status.toUpperCase() === "ACTIVE"
+                            ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+                            : "border-red-400/20 bg-red-400/10 text-red-300"
+                        }
+                      `}
+                    >
+                      {selectedUser.status}
+                    </span>
+
+                  </div>
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    Employee ID: {selectedUser.employeeId}
+                  </p>
+
+                </div>
+
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedUser(null)}
+                className="
+                  rounded-xl
+                  border
+                  border-white/[0.06]
+                  bg-white/[0.025]
+                  p-2
+                  text-slate-500
+                  transition
+                  hover:bg-white/[0.06]
+                  hover:text-white
+                "
+              >
+                <X size={18} />
+              </button>
+
+            </div>
+
+            {/* CONTENT */}
+
+            <div className="flex-1 overflow-y-auto p-6">
+
+              {/* IDENTIFICATION */}
+
+              <section>
+
+                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-violet-400">
+                  InformaciÃ³n
+                </p>
+
+                <div className="mt-3 grid grid-cols-2 gap-3">
+
+                  <div
+                    className="
+                      rounded-2xl
+                      border
+                      border-white/[0.06]
+                      bg-white/[0.025]
+                      p-4
+                    "
+                  >
+                    <p className="text-[10px] uppercase tracking-wider text-slate-500">
+                      Departamento
+                    </p>
+
+                    <p className="mt-1 text-sm font-semibold text-white">
+                      {selectedUser.department?.name ||
+                        "Sin departamento"}
+                    </p>
+                  </div>
+
+                  <div
+                    className="
+                      rounded-2xl
+                      border
+                      border-white/[0.06]
+                      bg-white/[0.025]
+                      p-4
+                    "
+                  >
+                    <p className="text-[10px] uppercase tracking-wider text-slate-500">
+                      Cargo
+                    </p>
+
+                    <p className="mt-1 text-sm font-semibold text-white">
+                      {selectedUser.jobTitle ||
+                        "Sin cargo"}
+                    </p>
+                  </div>
+
+                  <div
+                    className="
+                      rounded-2xl
+                      border
+                      border-white/[0.06]
+                      bg-white/[0.025]
+                      p-4
+                    "
+                  >
+                    <p className="text-[10px] uppercase tracking-wider text-slate-500">
+                      Correo
+                    </p>
+
+                    <p className="mt-1 break-all text-sm text-slate-300">
+                      {selectedUser.email || "Sin correo"}
+                    </p>
+                  </div>
+
+                  <div
+                    className="
+                      rounded-2xl
+                      border
+                      border-white/[0.06]
+                      bg-white/[0.025]
+                      p-4
+                    "
+                  >
+                    <p className="text-[10px] uppercase tracking-wider text-slate-500">
+                      Teléfono
+                    </p>
+
+                    <p className="mt-1 text-sm text-slate-300">
+                      {selectedUser.phone || "Sin telÃ©fono"}
+                    </p>
+                  </div>
+
+                </div>
+
+              </section>
+
+              {/* EQUIPMENT */}
+
+              <section className="mt-7">
+
+                <div className="flex items-center justify-between">
+
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-violet-400">
+                      Inventario
+                    </p>
+
+                    <h3 className="mt-1 text-sm font-semibold text-white">
+                      Equipos asignados
+                    </h3>
+                  </div>
+
+                  <div
+                    className="
+                      flex
+                      h-9
+                      min-w-9
+                      items-center
+                      justify-center
+                      rounded-xl
+                      bg-violet-500/10
+                      px-3
+                      text-sm
+                      font-bold
+                      text-violet-300
+                    "
+                  >
+                    {Array.isArray(selectedUser.equipment)
+                      ? selectedUser.equipment.length
+                      : 0}
+                  </div>
+
+                </div>
+
+                <div
+                  className="
+                    mt-3
+                    rounded-2xl
+                    border
+                    border-white/[0.06]
+                    bg-white/[0.025]
+                    p-4
+                  "
+                >
+
+                  {Array.isArray(selectedUser.equipment) &&
+                  selectedUser.equipment.length > 0 ? (
+
+                    <div className="space-y-2">
+
+                      {selectedUser.equipment.map(
+                        (_, index) => (
+                          <div
+                            key={index}
+                            className="
+                              flex
+                              items-center
+                              justify-between
+                              rounded-xl
+                              border
+                              border-white/[0.05]
+                              bg-white/[0.02]
+                              px-3
+                              py-3
+                            "
+                          >
+                            <span className="text-sm text-slate-300">
+                              Equipo asignado
+                            </span>
+
+                            <span className="text-xs text-emerald-300">
+                              Asignado
+                            </span>
+                          </div>
+                        ),
+                      )}
+
+                    </div>
+
+                  ) : (
+
+                    <div className="py-5 text-center">
+
+                      <p className="text-sm text-slate-400">
+                        No hay equipos personales asignados
+                      </p>
+
+                      <p className="mt-1 text-xs text-slate-600">
+                        Esta persona no tiene activos relacionados.
+                      </p>
+
+                    </div>
+
+                  )}
+
+                </div>
+
+              </section>
+
+              {/* INVENTORY CONTROL */}
+
+              <section className="mt-7">
+
+                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-violet-400">
+                  Control IT
+                </p>
+
+                <div
+                  className="
+                    mt-3
+                    rounded-2xl
+                    border
+                    border-white/[0.06]
+                    bg-white/[0.025]
+                    p-4
+                  "
+                >
+
+                  <div className="flex items-center justify-between">
+
+                    <span className="text-sm text-slate-400">
+                      Estado
+                    </span>
+
+                    <span
+                      className={
+                        selectedUser.status.toUpperCase() === "ACTIVE"
+                          ? "text-sm font-semibold text-emerald-300"
+                          : "text-sm font-semibold text-red-300"
+                      }
+                    >
+                      {selectedUser.status}
+                    </span>
+
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between">
+
+                    <span className="text-sm text-slate-400">
+                      Activos
+                    </span>
+
+                    <span className="text-sm font-semibold text-white">
+                      {Array.isArray(selectedUser.equipment)
+                        ? selectedUser.equipment.length
+                        : 0}
+                    </span>
+
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between">
+
+                    <span className="text-sm text-slate-400">
+                      Departamento
+                    </span>
+
+                    <span className="max-w-[220px] truncate text-right text-sm font-semibold text-white">
+                      {selectedUser.department?.name ||
+                        "Sin departamento"}
+                    </span>
+
+                  </div>
+
+                </div>
+
+              </section>
+
+            </div>
+
+            {/* FOOTER */}
+
+            <div
+              className="
+                border-t
+                border-white/[0.07]
+                bg-[#08111f]
+                p-5
+              "
+            >
+
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href =
+                    `/users/${selectedUser.id}`;
+                }}
+                className="
+                  w-full
+                  rounded-xl
+                  bg-violet-600
+                  px-4
+                  py-3
+                  text-sm
+                  font-semibold
+                  text-white
+                  shadow-lg
+                  shadow-violet-600/20
+                  transition
+                  hover:bg-violet-500
+                "
+              >
+                Ver expediente completo
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedUser(null)}
+                className="
+                  mt-2
+                  w-full
+                  rounded-xl
+                  px-4
+                  py-2.5
+                  text-sm
+                  font-medium
+                  text-slate-400
+                  transition
+                  hover:bg-white/[0.04]
+                  hover:text-white
+                "
+              >
+                Cerrar
+              </button>
+
+            </div>
+
+          </aside>
+        </>
+      )}
+
+      {/* IMPORT MODAL */}
+
+      {showImport && (
+        <Modal
+          title="Revisar importaciÃ³n"
+          onClose={() => {
+            if (!importing) {
+              setShowImport(false);
+              setImportRows([]);
+            }
+          }}
+        >
+
+          <div className="space-y-5">
+
+            <div className="rounded-xl border border-violet-400/15 bg-violet-500/10 p-4">
+              <p className="text-sm font-semibold text-violet-200">
+                Vista previa
+              </p>
+
+              <p className="mt-1 text-xs text-slate-400">
+                Se encontraron {importRows.length} registros vÃ¡lidos.
+                Los empleados existentes no serï¿½n duplicados.
+              </p>
+            </div>
+
+            <div className="max-h-[360px] overflow-auto rounded-xl border border-white/[0.06]">
+
+              <table className="w-full text-left text-xs">
+
+                <thead className="sticky top-0 bg-[#111827]">
+                  <tr>
+                    <HeaderCell>
+                      Employee ID
+                    </HeaderCell>
+
+                    <HeaderCell>
+                      Nombre
+                    </HeaderCell>
+
+                    <HeaderCell>
+                      Correo
+                    </HeaderCell>
+
+                    <HeaderCell>
+                      Cargo
+                    </HeaderCell>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {importRows.map(
+                    (row, index) => (
+                      <tr
+                        key={`${row.employeeId}-${index}`}
+                        className="border-b border-white/[0.04]"
+                      >
+                        <td className="px-4 py-3 text-violet-300">
+                          {row.employeeId}
+                        </td>
+
+                        <td className="px-4 py-3 text-white">
+                          {row.firstName}{" "}
+                          {row.lastName}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-400">
+                          {row.email || "ï¿½"}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-400">
+                          {row.jobTitle || "ï¿½"}
+                        </td>
+                      </tr>
+                    ),
+                  )}
+                </tbody>
+
+              </table>
+
+            </div>
+
+            <div className="flex justify-end gap-2">
+
+              <button
+                type="button"
+                disabled={importing}
+                onClick={() => {
+                  setShowImport(false);
+                  setImportRows([]);
+                }}
+                className="rounded-xl border border-white/[0.08] px-4 py-2.5 text-sm text-slate-300"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  importing ||
+                  importRows.length === 0
+                }
+                onClick={confirmImport}
+                className="flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+              >
+                <FileSpreadsheet size={16} />
+
+                {importing
+                  ? "Importando..."
+                  : "Confirmar importaciÃ³n"}
+              </button>
+
+            </div>
+
+          </div>
+
+        </Modal>
+      )}
+
+      {/* CREATE MODAL */}
+
+      {showCreate && (
+        <Modal
+          title="Nuevo usuario"
+          onClose={() =>
+            setShowCreate(false)
+          }
+        >
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+
+            <Field
+              label="Employee ID *"
+              value={newUser.employeeId}
+              onChange={(value) =>
+                setNewUser({
+                  ...newUser,
+                  employeeId: value,
+                })
+              }
+            />
+
+            <Field
+              label="Nombre *"
+              value={newUser.firstName}
+              onChange={(value) =>
+                setNewUser({
+                  ...newUser,
+                  firstName: value,
+                })
+              }
+            />
+
+            <Field
+              label="Apellido *"
+              value={newUser.lastName}
+              onChange={(value) =>
+                setNewUser({
+                  ...newUser,
+                  lastName: value,
+                })
+              }
+            />
+
+            <Field
+              label="Correo"
+              value={newUser.email}
+              onChange={(value) =>
+                setNewUser({
+                  ...newUser,
+                  email: value,
+                })
+              }
+            />
+
+            <Field
+              label="Teléfono"
+              value={newUser.phone}
+              onChange={(value) =>
+                setNewUser({
+                  ...newUser,
+                  phone: value,
+                })
+              }
+            />
+
+            <Field
+              label="Cargo"
+              value={newUser.jobTitle}
+              onChange={(value) =>
+                setNewUser({
+                  ...newUser,
+                  jobTitle: value,
+                })
+              }
+            />
+
+          </div>
+
+          <div className="mt-6 flex justify-end gap-2">
+
+            <button
+              type="button"
+              onClick={() =>
+                setShowCreate(false)
+              }
+              className="rounded-xl border border-white/[0.08] px-4 py-2.5 text-sm text-slate-300"
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="button"
+              onClick={createUser}
+              className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-500"
+            >
+              Crear usuario
+            </button>
+
+          </div>
+
+        </Modal>
+      )}
+
+    </div>
+  );
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  description,
+  positive,
+}: {
+  icon: typeof UsersIcon;
+  label: string;
+  value: number;
+  description: string;
+  positive?: boolean;
+}) {
+  return (
+    <div className="group rounded-2xl border border-white/[0.07] bg-[#0b1424] p-5 transition hover:border-violet-400/20">
+
+      <div className="flex items-start justify-between">
+
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+            {label}
+          </p>
+
+          <p className="mt-2 text-3xl font-bold text-white">
+            {value}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-600">
+            {description}
+          </p>
+        </div>
+
+        <div
+          className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+            positive
+              ? "bg-emerald-500/10 text-emerald-400"
+              : "bg-violet-500/10 text-violet-400"
+          }`}
+        >
+          <Icon size={18} />
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+function HeaderCell({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+      {children}
+    </th>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="space-y-2">
+      <span className="text-xs font-medium text-slate-400">
+        {label}
+      </span>
+
+      <input
+        value={value}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
+        className="h-11 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-violet-400/40"
+      />
+    </label>
+  );
+}
+
+function Modal({
+  title,
+  children,
+  onClose,
+}: {
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+
+      <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0b1424] shadow-2xl shadow-black/50">
+
+        <div className="flex items-center justify-between border-b border-white/[0.07] px-6 py-4">
+
+          <h2 className="text-lg font-semibold text-white">
+            {title}
+          </h2>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-slate-500 transition hover:bg-white/[0.05] hover:text-white"
+          >
+            <X size={18} />
+          </button>
+
+        </div>
+
+        <div className="p-6">
+          {children}
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+
+

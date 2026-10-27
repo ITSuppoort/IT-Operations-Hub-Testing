@@ -1,0 +1,16 @@
+/* INVENTORY_TABLE_PREMIUM_V1 -- tabla exclusivamente */
+.it-inv-i2 .inv-table-premium{border:1px solid rgba(17,196,225,.27);background:linear-gradient(145deg,rgba(5,33,58,.58),var(--inv-panel) 52%);box-shadow:0 10px 26px rgba(0,0,0,.13)}
+.it-inv-i2 .inv-table-header{border-bottom:1px solid var(--inv-border)}
+.it-inv-i2 .inv-table-mark{display:grid;place-items:center;width:38px;height:38px;border:1px solid rgba(0,218,214,.35);border-radius:11px;background:rgba(0,218,214,.12);color:#23d9d3}
+.it-inv-i2 .inv-table-select{max-width:205px;min-height:37px;padding:8px 26px 8px 10px;border:1px solid var(--inv-border);border-radius:9px;color:var(--inv-ink);background:var(--inv-panel);font-size:11px;outline:none}
+.it-inv-i2 .inv-table-select:focus{border-color:var(--it-accent,#8257f5)}
+.it-inv-i2 .inv-table-reset{display:inline-flex;align-items:center;gap:5px;min-height:37px;padding:8px 10px;border:1px solid var(--inv-border);border-radius:9px;font-size:11px}
+.it-inv-i2 .inv-table-modern thead{background:color-mix(in srgb,var(--it-accent,#8257f5) 9%,var(--inv-panel))}
+.it-inv-i2 .inv-table-modern th{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--inv-muted);font-weight:800}
+.it-inv-i2 .inv-table-modern td{border-bottom:1px solid var(--inv-border);vertical-align:middle}
+.it-inv-i2 .inv-table-modern tr:hover td{background:color-mix(in srgb,var(--it-accent,#8257f5) 5%,transparent)}
+.it-inv-i2 .inv-table-chip{display:inline-flex;padding:4px 9px;border-radius:999px;background:color-mix(in srgb,var(--it-accent,#8257f5) 19%,transparent);color:var(--inv-ink);font-size:11px;font-weight:700}
+.it-inv-i2 .inv-table-action{display:grid;place-items:center;width:32px;height:32px;border:1px solid var(--inv-border);border-radius:8px;color:var(--it-accent,#8257f5)}
+.it-inv-i2 .inv-table-action:hover{background:var(--inv-soft)}
+.it-shell[data-it-theme="light"] .it-inv-i2 .inv-table-premium{background:linear-gradient(145deg,#f0faff,#fff 60%)}
+@media(max-width:840px){.it-inv-i2 .inv-table-header>.flex:last-child{width:100%}.it-inv-i2 .inv-table-select{flex:1}.it-inv-i2 .inv-search{flex:1;min-width:220px}}

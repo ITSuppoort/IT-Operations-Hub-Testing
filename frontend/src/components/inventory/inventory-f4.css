@@ -1,0 +1,161 @@
+/* IT Store F4 – scoped, theme-aware, no global overrides */
+.inv-f4-premium{position:relative;border:1px solid color-mix(in srgb,#198bf8 48%,transparent)!important;box-shadow:0 0 0 1px rgba(25,139,248,.08),0 0 28px rgba(25,139,248,.09);}
+.inv-f4-premium:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,transparent,#02ddff,#8b5cf6,transparent);pointer-events:none;}
+.inv-f4-logo{display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;flex-shrink:0;border-radius:13px;color:#22d3ee;background:rgba(8,145,178,.12);border:1px solid rgba(34,211,238,.35);box-shadow:0 0 17px rgba(34,211,238,.18)}
+.inv-f4-premium .inv-table-modern tbody tr{transition:background-color .18s ease,box-shadow .18s ease}
+.inv-f4-premium .inv-table-modern tbody tr:hover{background:rgba(59,130,246,.065);box-shadow:inset 3px 0 rgba(34,211,238,.5)}
+.inv-f4-chip,.inv-f4-asset-icon{display:inline-flex;align-items:center;justify-content:center;border:1px solid currentColor;color:var(--it-text,#e5e7eb);background:rgba(99,102,241,.13)}
+.inv-f4-chip{padding:3px 9px;border-radius:999px;font-weight:700;font-size:11px;white-space:nowrap}
+.inv-f4-asset-icon{width:36px;height:36px;border-radius:11px;flex-shrink:0}
+.inv-f4-tone-blue{color:#60a5fa;background:rgba(37,99,235,.15)}.inv-f4-tone-purple{color:#c084fc;background:rgba(147,51,234,.15)}
+.inv-f4-tone-amber{color:#fbbf24;background:rgba(217,119,6,.13)}.inv-f4-tone-cyan{color:#22d3ee;background:rgba(8,145,178,.14)}
+.inv-f4-tone-teal{color:#2dd4bf;background:rgba(13,148,136,.13)}.inv-f4-tone-rose{color:#fb7185;background:rgba(225,29,72,.13)}
+.inv-f4-tone-indigo{color:#a5b4fc;background:rgba(79,70,229,.13)}.inv-f4-tone-slate{color:#94a3b8;background:rgba(100,116,139,.12)}
+.inv-f4-preview{border:1px solid rgba(34,211,238,.3);border-radius:12px;padding:10px 14px;background:rgba(8,145,178,.09);font-size:13px}
+.inv-f4-preview strong{display:block;font-size:11px;color:#22d3ee;letter-spacing:.08em}.inv-f4-preview div{font:700 19px ui-monospace,monospace;padding:5px 0;overflow-wrap:anywhere}
+.inv-f4-preview small{opacity:.8}
+@media(prefers-reduced-motion:reduce){.inv-f4-premium .inv-table-modern tbody tr{transition:none}}
+
+/* IT WAREHOUSE KPI COMPACT V1 */
+.inv-warehouse-kpi-grid {
+  width: 100%;
+  max-width: 1120px;
+  margin-inline: auto;
+  align-items: stretch;
+  gap: 12px;
+}
+.inv-warehouse-kpi-grid > .inv-kpi {
+  position: relative;
+  min-width: 0;
+  height: 122px;
+  min-height: 122px;
+  padding: 13px 16px !important;
+  overflow: hidden;
+  border-radius: 15px;
+}
+.inv-warehouse-kpi-grid > .inv-kpi .inv-muted {
+  font-size: 12px;
+  line-height: 1.25;
+}
+.inv-warehouse-kpi-grid > .inv-kpi .text-3xl {
+  margin-top: 5px;
+  font-size: 28px;
+  line-height: 1.15;
+}
+.inv-warehouse-kpi-grid > .inv-kpi .inv-kpi-line {
+  position: absolute;
+  bottom: 0;
+  left: 12px;
+  right: 12px;
+  height: 33px;
+  pointer-events: none;
+}
+@media (max-width: 639px) {
+  .inv-warehouse-kpi-grid { gap: 9px; }
+  .inv-warehouse-kpi-grid > .inv-kpi {
+    height: 110px;
+    min-height: 110px;
+    padding: 11px 12px !important;
+  }
+  .inv-warehouse-kpi-grid > .inv-kpi .text-3xl { font-size: 25px; }
+}
+
+/* IT WAREHOUSE KPI CONTENT-CENTER V2 */
+/* Ocupa todo el ancho: centra contenido, no las cuatro tarjetas. */
+.inv-warehouse-kpi-grid {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  gap: 12px;
+  align-items: stretch;
+}
+.inv-warehouse-kpi-grid > .inv-kpi {
+  box-sizing: border-box;
+  height: 96px;
+  min-height: 96px;
+  padding: 8px 12px 17px !important;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  overflow: hidden;
+  position: relative;
+  border-radius: 14px;
+}
+.inv-warehouse-kpi-grid > .inv-kpi .inv-muted {
+  position: relative;
+  z-index: 1;
+  font-size: 11px;
+  line-height: 1.2;
+}
+.inv-warehouse-kpi-grid > .inv-kpi .text-3xl {
+  position: relative;
+  z-index: 1;
+  margin-top: 4px;
+  font-size: 25px;
+  line-height: 1.05;
+  text-align: center;
+}
+.inv-warehouse-kpi-grid > .inv-kpi .inv-kpi-line {
+  position: absolute;
+  z-index: 0;
+  bottom: 0;
+  left: 10px;
+  right: 10px;
+  height: 18px;
+  opacity: .55;
+  pointer-events: none;
+}
+@media (max-width: 639px) {
+  .inv-warehouse-kpi-grid { gap: 8px; }
+  .inv-warehouse-kpi-grid > .inv-kpi { height: 88px; min-height: 88px; padding: 8px 7px 14px !important; }
+  .inv-warehouse-kpi-grid > .inv-kpi .text-3xl { font-size: 23px; }
+  .inv-warehouse-kpi-grid > .inv-kpi .inv-kpi-line { height: 14px; }
+}
+
+/* KPI NEON V4: estilos locales, sin datos falsos. */
+.inv-warehouse-kpi-grid {width:100%!important;max-width:none!important;margin:0!important;gap:12px!important;align-items:stretch!important}
+.inv-warehouse-kpi-grid>.inv-kpi.inv-kpi-v4-card {height:88px!important;min-height:88px!important;padding:12px 15px!important;display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:center!important;gap:14px!important;text-align:left!important;overflow:hidden!important;position:relative;border-radius:15px;box-sizing:border-box}
+.inv-kpi-v4-icon {width:40px;height:40px;flex:0 0 40px;display:grid;place-items:center;border-radius:13px;color:#40bdff;background:rgba(40,160,255,.10);border:1px solid currentColor;box-shadow:0 0 13px rgba(44,146,248,.12)}
+.inv-kpi-v4-main {display:flex;flex-direction:column;gap:5px;min-width:0}
+.inv-kpi-v4-label {font-size:12px;line-height:1.1;white-space:nowrap;color:var(--it-text,#d0d9e7);opacity:.85}
+.inv-kpi-v4-row {display:flex;align-items:center;gap:12px;min-height:27px}
+.inv-kpi-v4-number {font-size:26px;line-height:1;font-weight:850;font-variant-numeric:tabular-nums}
+.inv-kpi-v4-bars {display:flex;align-items:center;gap:3px;flex-shrink:0;color:#40bdff}
+.inv-kpi-v4-bars i {display:block;width:7px;height:13px;border-radius:2px;background:currentColor;opacity:.2}
+.inv-kpi-v4-bars i:nth-child(1),.inv-kpi-v4-bars i:nth-child(2){opacity:.9}
+.inv-kpi-v4-bars i:nth-child(3){opacity:.65}.inv-kpi-v4-bars i:nth-child(4){opacity:.45}
+.inv-warehouse-kpi-grid>.inv-kpi.inv-kpi-v4-card .inv-kpi-line{display:none!important}
+.inv-kpi-v4-card.inv-teal .inv-kpi-v4-icon,.inv-kpi-v4-card.inv-teal .inv-kpi-v4-bars{color:#b76aff}
+.inv-kpi-v4-card.inv-purple .inv-kpi-v4-icon,.inv-kpi-v4-card.inv-purple .inv-kpi-v4-bars{color:#51a9ff}
+.inv-kpi-v4-card.inv-amber .inv-kpi-v4-icon,.inv-kpi-v4-card.inv-amber .inv-kpi-v4-bars{color:#fbbf24}
+@media(max-width:850px){.inv-warehouse-kpi-grid>.inv-kpi.inv-kpi-v4-card{padding:9px!important;gap:8px!important}.inv-kpi-v4-bars i{width:5px}}
+@media(max-width:520px){.inv-warehouse-kpi-grid{gap:7px!important}.inv-warehouse-kpi-grid>.inv-kpi.inv-kpi-v4-card{height:76px!important;min-height:76px!important}.inv-kpi-v4-icon{width:30px;height:30px;flex-basis:30px}.inv-kpi-v4-number{font-size:22px}.inv-kpi-v4-label{font-size:10px}.inv-kpi-v4-bars i{width:3px;height:9px}.inv-kpi-v4-row{gap:7px}}
+
+/* ALMACEN UNIFICADO V5 */
+/* Los cuatro KPI siguen a ancho completo, con separaciÃ³n visible y sin montarse. */
+.inv-warehouse-v5 {margin-top:12px!important;}
+.inv-warehouse-v5 .inv-warehouse-kpi-grid {gap:12px!important;row-gap:12px!important;margin:0 0 16px!important;max-width:none!important;width:100%!important;}
+.inv-warehouse-v5 .inv-warehouse-kpi-grid>.inv-kpi-v4-card {height:86px!important;min-height:86px!important;margin:0!important;overflow:hidden!important;}
+.inv-warehouse-v5>.inv-f4-premium {margin-top:0!important;}
+/* Historial reutiliza superficie, tabla y espaciado del inventario, sin caja anidada. */
+.inv-warehouse-v5 .inv-history-v5 {padding:0!important;margin:0!important;background:transparent!important;border:0!important;box-shadow:none!important;}
+.inv-warehouse-v5 .inv-history-v5>div:first-child {padding:12px 16px 2px!important;align-items:center!important;}
+.inv-warehouse-v5 .inv-history-v5>div[role="tablist"] {padding:0 16px!important;}
+.inv-warehouse-v5 .inv-history-v5>label.inv-search {margin:0 16px 10px!important;max-width:460px!important;}
+.inv-warehouse-v5 .inv-history-v5>div.overflow-x-auto {margin:0!important;}
+.inv-warehouse-v5 .inv-history-v5 table.inv-table-modern {width:100%!important;border-collapse:collapse!important;}
+.inv-warehouse-v5 .inv-history-v5 table.inv-table-modern thead {background:rgba(104,72,157,.13);}
+.inv-warehouse-v5 .inv-history-v5 table.inv-table-modern th {padding:12px 16px!important;}
+.inv-warehouse-v5 .inv-history-v5 table.inv-table-modern td {padding:13px 16px!important;}
+.inv-warehouse-v5 .inv-history-v5 table.inv-table-modern tbody tr {border-top:1px solid rgba(137,162,207,.15);transition:background-color .15s ease;}
+.inv-warehouse-v5 .inv-history-v5 table.inv-table-modern tbody tr:hover {background:rgba(59,130,246,.07);}
+.inv-warehouse-v5 .inv-history-v5 .overflow-x-auto>p {padding:14px 16px!important;}
+@media(max-width:850px){.inv-warehouse-v5 .inv-warehouse-kpi-grid {gap:9px!important;}.inv-warehouse-v5 .inv-warehouse-kpi-grid>.inv-kpi-v4-card {height:82px!important;min-height:82px!important;}}
+@media(max-width:520px){.inv-warehouse-v5 .inv-history-v5>div:first-child {padding:12px!important;}.inv-warehouse-v5 .inv-history-v5>div[role="tablist"] {padding:0 12px!important;}.inv-warehouse-v5 .inv-history-v5>label.inv-search {margin:0 12px 10px!important;}.inv-warehouse-v5 .inv-warehouse-kpi-grid {gap:8px!important;}}
+
+/* REDISENO-PANEL-NUEVOS-V6 */
+.inv-f4-premium .inv-recent-icon {display:inline-flex;align-items:center;justify-content:center;width:33px;height:33px;flex-shrink:0;border-radius:10px;border:1px solid rgba(56,189,248,.5);color:#7dd3fc;background:rgba(56,189,248,.09);}
+.inv-f4-premium .inv-table-modern tbody tr {transition:background-color .15s ease;}
+.inv-f4-premium .inv-table-modern tbody tr:hover {background:rgba(72,104,168,.09);}
